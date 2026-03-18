@@ -416,9 +416,15 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
     <div class="tool-panel-header">
       <div>
         <div class="tool-panel-title">Weekly task planner</div>
-        <div class="tool-panel-sub">Create &amp; edit tasks here → tick off progress → export JSON to update your file</div>
+        <div class="tool-panel-sub">Create &amp; edit tasks here → tick off progress → export full JSON to replace your file</div>
       </div>
-      <div class="tool-tabs" id="tool-tabs"></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:7px">
+          <label style="font-family:'Baloo 2',cursive;font-size:.75rem;font-weight:800;color:#bbb;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap">Week</label>
+          <input type="text" id="tool-week-inp" placeholder="17–23 Mar 2025" style="font-family:'Nunito',sans-serif;font-size:.82rem;font-weight:700;background:var(--wash-yellow);border:var(--b);border-radius:50px;padding:5px 14px;color:var(--ink);outline:none;width:170px;transition:border-color .15s,box-shadow .15s">
+        </div>
+        <div class="tool-tabs" id="tool-tabs"></div>
+      </div>
     </div>
     <div class="tool-body">
       <!-- LEFT: task editor (full CRUD) -->
@@ -436,8 +442,7 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
         </div>
         <div class="tool-frac" id="tool-frac">0 of 0 tasks done</div>
         <div class="tool-actions">
-          <button class="tool-btn export-single" onclick="toolExportActive()">Export this project →</button>
-          <button class="tool-btn export-all" onclick="toolExportAll()">Export all three</button>
+          <button class="tool-btn export-all" onclick="toolExportAll()">⬇ Export full JSON</button>
           <button class="tool-btn copy-btn" id="tool-copy-btn" onclick="toolCopyJSON()">Copy JSON</button>
           <button class="tool-btn reset-btn" onclick="toolReset()">↺ Reset</button>
         </div>
@@ -451,7 +456,7 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
         </div>
         <div class="json-out-wrap" id="tool-json-wrap">
           <pre class="json-out" id="tool-json-out"></pre>
-          <p class="json-hint">Paste this into the <code>projects</code> section of your <code>studiorum-log.json</code>, then reload the page.</p>
+          <p class="json-hint">This is the <strong>complete</strong> replacement for your <code style="background:var(--green-pale);padding:1px 6px;border-radius:4px;font-size:.71rem;color:#3a7a52">studiorum-log.json</code> — overwrite the whole file, then reload. The <code style="background:var(--wash-yellow);padding:1px 6px;border-radius:4px;font-size:.71rem">logs</code> array from your existing file will be preserved since it is not modified here.</p>
         </div>
       </div>
     </div>
@@ -761,11 +766,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 });
 
-// JSON export
-function buildExportObj(keys){
-  const obj={};
-  keys.forEach(k=>{ obj[k]={ tasks:(taskState[k]||[]).map(t=>({id:t.id,title:t.title,done:t.done})) }; });
-  return JSON.stringify({ projects:obj }, null, 2);
+// JSON export — always full structure: { week, projects: { geo, cn, fs } }
+function buildFullExport(){
+  const weekVal = (document.getElementById('tool-week-inp')?.value.trim()) || (DATA?.week) || '';
+  const projects = {};
+  ['geo','cn','fs'].forEach(k=>{
+    projects[k] = { tasks: (taskState[k]||[]).map(t=>({id:t.id, title:t.title, done:t.done})) };
+  });
+  return JSON.stringify({ week: weekVal, projects }, null, 2);
 }
 
 function showToolJSON(json){
@@ -775,11 +783,10 @@ function showToolJSON(json){
   document.getElementById('tool-json-out').textContent=json;
 }
 
-function toolExportActive(){ showToolJSON(buildExportObj([toolActive])); }
-function toolExportAll(){ showToolJSON(buildExportObj(['geo','cn','fs'])); }
+function toolExportAll(){ showToolJSON(buildFullExport()); }
 
 function toolCopyJSON(){
-  const text=toolLastJSON||buildExportObj([toolActive]);
+  const text=toolLastJSON||buildFullExport();
   navigator.clipboard.writeText(text).then(()=>{
     const b=document.getElementById('tool-copy-btn');
     b.textContent='Copied ✓'; b.className='tool-btn copied';
@@ -899,6 +906,7 @@ async function init(){
 
   nextLogId=Math.max(0,...(DATA.logs||[]).map(l=>l.id||0))+1;
   const wEl=document.getElementById('hero-week'); if(wEl&&DATA.week) wEl.textContent=`📅 Week of ${DATA.week}`;
+  const wInp=document.getElementById('tool-week-inp'); if(wInp&&DATA.week) wInp.value=DATA.week;
 
   buildStats(DATA.logs||[]);
   buildProjectCards();
