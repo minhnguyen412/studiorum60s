@@ -5,42 +5,100 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STUDIORUM60S — Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<!-- Firebase v9 compat (global scope, no import needed) -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script>
+// ── Firestore REST API — no SDK needed, works on file:// and any server ──
 (function(){
-  const firebaseConfig = {
-    apiKey:            "AIzaSyBXNBmafxTtxw-OLMWJ9yp6if6JBYy9vGU",
-    authDomain:        "studiorum60s.firebaseapp.com",
-    projectId:         "studiorum60s",
-    storageBucket:     "studiorum60s.firebasestorage.app",
-    messagingSenderId: "464715333",
-    appId:             "1:464715333:web:d2903166739997c0af2d2c",
-    measurementId:     "G-YWLRVPRQT3"
-  };
+  const PROJECT  = 'studiorum60s';
+  const API_KEY  = 'AIzaSyBXNBmafxTtxw-OLMWJ9yp6if6JBYy9vGU';
+  const BASE     = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
+  const DOC_PATH = `${BASE}/studiorum60s/ticks`;
 
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-  const TICKS_DOC = db.collection('studiorum60s').doc('ticks');
+  // ── helpers: Firestore value encoding/decoding ──────────
+  function encodeValue(v){
+    if(v === null)            return { nullValue: null };
+    if(typeof v === 'boolean') return { booleanValue: v };
+    if(typeof v === 'number')  return { integerValue: String(v) };
+    if(typeof v === 'string')  return { stringValue: v };
+    if(typeof v === 'object' && !Array.isArray(v)){
+      const fields = {};
+      for(const k in v) fields[k] = encodeValue(v[k]);
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(v) };
+  }
 
+  function decodeValue(v){
+    if(!v) return null;
+    if('booleanValue'  in v) return v.booleanValue;
+    if('integerValue'  in v) return parseInt(v.integerValue);
+    if('doubleValue'   in v) return v.doubleValue;
+    if('stringValue'   in v) return v.stringValue;
+    if('nullValue'     in v) return null;
+    if('mapValue'      in v){
+      const out = {};
+      const fields = v.mapValue.fields || {};
+      for(const k in fields) out[k] = decodeValue(fields[k]);
+      return out;
+    }
+    return null;
+  }
+
+  function decodeDoc(doc){
+    if(!doc || !doc.fields) return { geo:{}, cn:{}, fs:{} };
+    const out = {};
+    for(const k in doc.fields) out[k] = decodeValue(doc.fields[k]);
+    return out;
+  }
+
+  function encodeDoc(data){
+    const fields = {};
+    for(const k in data) fields[k] = encodeValue(data[k]);
+    return { fields };
+  }
+
+  // ── loadTicks: GET document ─────────────────────────────
   async function loadTicks(){
     try {
-      const snap = await TICKS_DOC.get();
-      return snap.exists ? snap.data() : { geo:{}, cn:{}, fs:{} };
-    } catch(e){ console.warn('Firestore loadTicks error:', e); return { geo:{}, cn:{}, fs:{} }; }
+      const r = await fetch(`${DOC_PATH}?key=${API_KEY}`);
+      if(r.status === 404) return { geo:{}, cn:{}, fs:{} };
+      if(!r.ok) throw new Error(r.status);
+      const doc = await r.json();
+      return decodeDoc(doc);
+    } catch(e){ console.warn('loadTicks error:', e); return { geo:{}, cn:{}, fs:{} }; }
   }
 
+  // ── saveTick: PATCH with updateMask so we only touch one field ──
   async function saveTick(proj, taskId, val){
     try {
-      await TICKS_DOC.set({ [proj]: { [taskId]: val } }, { merge: true });
-    } catch(e){ console.warn('Firestore saveTick error:', e); }
+      // Build the full current proj map then patch it
+      const current = await loadTicks();
+      if(!current[proj]) current[proj] = {};
+      current[proj][taskId] = val;
+
+      const body = encodeDoc({ [proj]: current[proj] });
+      const mask = `updateMask.fieldPaths=${encodeURIComponent(proj)}`;
+      await fetch(`${DOC_PATH}?${mask}&key=${API_KEY}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+    } catch(e){ console.warn('saveTick error:', e); }
   }
 
+  // ── onSnapshot: poll every 4 seconds (REST has no WebSocket) ──
+  let _lastData = null;
   function onSnapshot(cb){
-    return TICKS_DOC.onSnapshot(snap => {
-      cb(snap.exists ? snap.data() : { geo:{}, cn:{}, fs:{} });
-    }, err => console.warn('Firestore listener error:', err));
+    async function poll(){
+      try {
+        const r = await fetch(`${DOC_PATH}?key=${API_KEY}`);
+        if(r.status === 404){ cb({ geo:{}, cn:{}, fs:{} }); return; }
+        const doc  = await r.json();
+        const data = JSON.stringify(doc.fields || {});
+        if(data !== _lastData){ _lastData = data; cb(decodeDoc(doc)); }
+      } catch(e){ console.warn('poll error:', e); }
+    }
+    poll();
+    setInterval(poll, 4000);
   }
 
   window._fb = { loadTicks, saveTick, onSnapshot };
@@ -586,7 +644,6 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
   </div>
 </footer>
 
-<script>
 <script>
 // ═══════════════════════════════════════════════════════════
 //  CONFIG
