@@ -839,14 +839,58 @@ function buildLogGrid(){
 }
 
 // ═══════════════════════════════════════════════════════════
-//  LOAD JSON
+//  LOAD JSON — no fallback, fetch only
 // ═══════════════════════════════════════════════════════════
-const FALLBACK = { week:"17–23 Mar 2025", projects:{ geo:{tasks:[{id:"g1",title:"Run Group A experiment session",done:true},{id:"g2",title:"Conduct post-training survey",done:true},{id:"g3",title:"Analyse data & write draft report",done:true},{id:"g4",title:"Design Week 4 experiment framework",done:true},{id:"g5",title:"Debrief with team — findings review",done:false},{id:"g6",title:"Update training materials",done:false},{id:"g7",title:"Plan next experiment cycle",done:false}]}, cn:{tasks:[{id:"c1",title:"Post HSK3 Sprint TikTok series",done:true},{id:"c2",title:"Build thematic vocabulary pack",done:true},{id:"c3",title:"Review Q1 sales strategy",done:true},{id:"c4",title:"Test product with beta learners",done:true},{id:"c5",title:"Improve web conversion flow",done:false},{id:"c6",title:"Publish 2 more content pieces",done:false},{id:"c7",title:"Analyse weekly user data",done:false},{id:"c8",title:"Write monthly revenue summary",done:false}]}, fs:{tasks:[{id:"f1",title:"Speaking practice — daily topics",done:true},{id:"f2",title:"IELTS Writing Task 2 error review",done:true},{id:"f3",title:"Listening — BBC Sounds 30 min",done:true},{id:"f4",title:"Anki vocabulary review (150 cards)",done:true},{id:"f5",title:"Record & compare speaking",done:true},{id:"f6",title:"Update personal error checklist",done:false},{id:"f7",title:"Read 1 article & note expressions",done:false}]} }, logs:[{id:1,project:"geo",date:"18 Mar 2025",day:"Wed",emoji:"🧪",title:"Group A Experiment — Phase 2",desc:"Observed organisational reactions to a restructured training session. Noted 3 anomalies worth following up.",tags:["experiment","observation","training"],status:"done"},{id:2,project:"cn",date:"18 Mar 2025",day:"Wed",emoji:"🀄",title:"Launch: HSK3 Sprint Content",desc:"Posted 2 x 60-second TikTok videos. CTR up 18% vs last week. New users: +34.",tags:["product","user data","sales"],status:"done"},{id:3,project:"fs",date:"18 Mar 2025",day:"Wed",emoji:"📖",title:"Speaking Practice — Daily Topics",desc:"Finished 3 topics. Recorded & compared with last week. Fluency improved on transitions.",tags:["learning","progress","speaking"],status:"doing"},{id:4,project:"geo",date:"17 Mar 2025",day:"Tue",emoji:"🔬",title:"Post-Training Survey — Data Collect",desc:"N=28 participants. 89% response rate. Qualitative analysis still pending.",tags:["data","survey","analysis"],status:"done"},{id:5,project:"cn",date:"17 Mar 2025",day:"Tue",emoji:"📦",title:"Build: Thematic Vocabulary Pack",desc:"Completed first 5 topics. Tested with 3 beta learners. Positive feedback overall.",tags:["product","content","testing"],status:"done"},{id:6,project:"fs",date:"17 Mar 2025",day:"Tue",emoji:"✍️",title:"IELTS Writing Task 2 — Error Review",desc:"Reviewed 2 essays. Main issues: weak cohesion & overused connectors. Added to checklist.",tags:["writing","IELTS","conclusions"],status:"done"},{id:7,project:"geo",date:"16 Mar 2025",day:"Mon",emoji:"📊",title:"Feb Data Analysis — Draft Report",desc:"Completed draft. Key finding: training effectiveness drops in week 3.",tags:["data","report","insight"],status:"done"},{id:8,project:"cn",date:"16 Mar 2025",day:"Mon",emoji:"🎯",title:"Q1 Sales Strategy Review",desc:"Feb revenue up 22%. TikTok = 61% of traffic. Web conversion still needs work.",tags:["sales","strategy","review"],status:"done"},{id:9,project:"fs",date:"16 Mar 2025",day:"Mon",emoji:"🎧",title:"Listening — BBC Sounds 30 min",desc:"Focused on British accent. Noted 12 new phrases. Comprehension ~75%.",tags:["listening","vocabulary","progress"],status:"done"},{id:10,project:"geo",date:"15 Mar 2025",day:"Sun",emoji:"🗂️",title:"Design New Experiment — Week 4",desc:"Team brainstorm. Identified 2 key independent variables. Set fieldwork framework.",tags:["design","experiment","team"],status:"done"},{id:11,project:"cn",date:"15 Mar 2025",day:"Sun",emoji:"🖊️",title:"Rest Day — End-of-week Metrics Scan",desc:"No production. Quick metrics review: retention, CTR, revenue totals.",tags:["rest","review"],status:"todo"},{id:12,project:"fs",date:"15 Mar 2025",day:"Sun",emoji:"📝",title:"Vocabulary Review — Anki Session",desc:"150 cards. Retention 83%. 18 cards reset to 1-day interval.",tags:["vocab","Anki","retention"],status:"done"}] };
+function showFetchError(){
+  // stats bar
+  ['stat-total','stat-geo','stat-cn','stat-fs','stat-streak'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.textContent='—';
+  });
+  // hero week
+  const wEl=document.getElementById('hero-week');
+  if(wEl) wEl.textContent='';
+
+  // projects grid
+  const grid=document.getElementById('projects-grid');
+  if(grid){
+    grid.innerHTML=`
+      <div style="grid-column:1/-1;padding:48px 24px;text-align:center;border:2px dashed rgba(45,45,45,.14);border-radius:22px">
+        <div style="font-size:2rem;margin-bottom:10px">📂</div>
+        <p style="font-family:'Baloo 2',cursive;font-size:1rem;font-weight:800;margin-bottom:6px">No data file found</p>
+        <p style="font-size:.83rem;color:#999;font-weight:600;line-height:1.7">Place <code style="background:var(--green-pale);padding:1px 7px;border-radius:5px;color:#3a7a52">studiorum-log.json</code> inside a <code style="background:var(--wash-blue);padding:1px 7px;border-radius:5px;color:#3a65a0">data/</code> folder next to this HTML file, then reload.</p>
+      </div>`;
+  }
+
+  // task builder tabs still usable (works off localStorage)
+  buildToolTabs();
+  renderToolPanel();
+  buildHeatmap();
+
+  // log section
+  const fr=document.getElementById('filters-row'); if(fr) fr.innerHTML='';
+  const lg=document.getElementById('log-grid');
+  if(lg){
+    lg.className='log-grid';
+    lg.innerHTML=`
+      <div class="empty-state">
+        <div class="ei">📋</div>
+        <p>Load <strong>studiorum-log.json</strong> to see your progress log.</p>
+      </div>`;
+  }
+}
 
 async function init(){
   showSkeleton();
-  try{ const r=await fetch(LOG_JSON); if(!r.ok) throw new Error(); DATA=await r.json(); }
-  catch{ DATA=FALLBACK; }
+  try{
+    const r=await fetch(LOG_JSON);
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    DATA=await r.json();
+  } catch(e){
+    console.warn('studiorum-log.json not found or invalid:', e.message);
+    DATA=null;
+  }
+
+  if(!DATA){ showFetchError(); return; }
 
   // seed tasks: localStorage > JSON
   const saved=loadTasksLS();
