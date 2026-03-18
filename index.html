@@ -463,13 +463,26 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
 .date-today-btn:hover{transform:translateY(-1px)}
 .date-display{font-family:'Baloo 2',cursive;font-size:.82rem;font-weight:700;color:var(--green-deep);margin-top:5px;min-height:1.2em;letter-spacing:.02em}
 
-/* EMOJI PICKER */
-.emoji-input-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.emoji-hint{font-size:.75rem;font-weight:700;color:#bbb}
-.emoji-picker{display:flex;flex-wrap:wrap;gap:5px}
-.emoji-opt{width:36px;height:36px;border-radius:10px;border:1.5px solid transparent;background:var(--cream);cursor:pointer;font-size:1.25rem;display:flex;align-items:center;justify-content:center;transition:border-color .1s,background .1s,transform .1s}
-.emoji-opt:hover{border-color:rgba(45,45,45,.2);background:var(--white);transform:scale(1.15)}
-.emoji-opt.selected{border-color:var(--ink);background:var(--white);box-shadow:var(--sh-sm)}
+/* EMOJI PICKER DROPDOWN */
+.emoji-field{position:relative}
+.emoji-trigger{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--cream);border:var(--b);border-radius:12px;cursor:pointer;transition:border-color .15s,box-shadow .15s;user-select:none}
+.emoji-trigger:hover{border-color:var(--ink)}
+.emoji-trigger.open{border-color:var(--pink-deep);box-shadow:0 0 0 3px rgba(240,144,164,.15)}
+.emoji-preview{font-size:1.5rem;width:32px;text-align:center;line-height:1}
+.emoji-trigger-label{flex:1;font-size:.84rem;font-weight:600;color:#aaa}
+.emoji-trigger-label.picked{color:var(--ink)}
+.emoji-caret{font-size:.65rem;color:#bbb;transition:transform .2s}
+.emoji-trigger.open .emoji-caret{transform:rotate(180deg)}
+.emoji-dropdown{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--white);border:var(--bt);border-radius:18px;box-shadow:var(--sh-lg);z-index:300;overflow:hidden;display:none;flex-direction:column}
+.emoji-dropdown.open{display:flex}
+.emoji-cats{display:flex;gap:4px;padding:10px 12px 8px;border-bottom:var(--bs);flex-wrap:wrap}
+.emoji-cat-btn{font-family:'Baloo 2',cursive;font-size:.72rem;font-weight:700;border:var(--b);border-radius:50px;padding:3px 11px;cursor:pointer;background:var(--white);transition:background .1s,transform .1s;color:var(--ink)}
+.emoji-cat-btn:hover{transform:translateY(-1px)}
+.emoji-cat-btn.active{background:var(--pink-pale);border-color:var(--pink-deep)}
+.emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:10px 12px 12px;max-height:180px;overflow-y:auto}
+.emoji-opt{width:100%;aspect-ratio:1;border-radius:9px;border:1.5px solid transparent;background:transparent;cursor:pointer;font-size:1.2rem;display:flex;align-items:center;justify-content:center;transition:border-color .1s,background .1s,transform .1s}
+.emoji-opt:hover{border-color:rgba(45,45,45,.18);background:var(--cream);transform:scale(1.18)}
+.emoji-opt.selected{border-color:var(--ink);background:var(--pink-pale);box-shadow:var(--sh-sm)}
 </style>
 </head>
 <body>
@@ -628,13 +641,18 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
         </div>
         <div class="date-display" id="date-display"></div>
       </div>
-      <div class="fg">
+      <div class="fg emoji-field" id="emoji-field">
         <label class="flabel">Emoji</label>
-        <div class="emoji-input-row">
-          <input type="text" id="f-emoji" placeholder="📌" maxlength="4" style="font-size:1.4rem;text-align:center;width:64px;flex-shrink:0" oninput="syncEmojiPicker()">
-          <span class="emoji-hint">or pick one:</span>
+        <input type="hidden" id="f-emoji" value="📌">
+        <div class="emoji-trigger" id="emoji-trigger" onclick="toggleEmojiDropdown()">
+          <span class="emoji-preview" id="emoji-preview">📌</span>
+          <span class="emoji-trigger-label picked" id="emoji-trigger-label">📌 — click to change</span>
+          <span class="emoji-caret">▼</span>
         </div>
-        <div class="emoji-picker" id="emoji-picker"></div>
+        <div class="emoji-dropdown" id="emoji-dropdown">
+          <div class="emoji-cats" id="emoji-cats"></div>
+          <div class="emoji-grid" id="emoji-grid"></div>
+        </div>
       </div>
       <div class="fg"><label class="flabel">Title</label><input type="text" id="f-title" placeholder="What did you work on?"></div>
       <div class="fg"><label class="flabel">Notes / Observations</label><textarea id="f-desc" placeholder="What happened? What did you notice? Any data?"></textarea></div>
@@ -684,6 +702,22 @@ const STATUS_LBL = { done:'Done', doing:'In progress', todo:'Not started' };
 const DAYS_ORDER = ['All','Wed','Tue','Mon','Sun'];
 const PROJS_ORD  = ['all','geo','cn','fs'];
 const PROJ_LBL   = { all:'All projects', geo:'🧪 Geolab', cn:'🀄 Chinese60s', fs:'📖 Freesize' };
+
+// ── AUTO WEEK LABEL ─────────────────────────────────────────
+function getCurrentWeekLabel(){
+  const now  = new Date();
+  const day  = now.getDay(); // 0=Sun
+  const diffToMon = (day === 0) ? -6 : 1 - day;
+  const mon  = new Date(now); mon.setDate(now.getDate() + diffToMon);
+  const sun  = new Date(mon); sun.setDate(mon.getDate() + 6);
+  const fmt  = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+  const fmtY = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  // If same month: "14–20 Jul 2025", else "28 Jul – 3 Aug 2025"
+  if(mon.getMonth() === sun.getMonth()){
+    return `${mon.getDate()}–${fmtY(sun)}`;
+  }
+  return `${fmt(mon)} – ${fmtY(sun)}`;
+}
 
 const PROJ_DESC = {
   geo:{ desc:'Run field experiments, observe how organisations operate, gather behavioural data — and train based on what the data reveals.', pillars:['Run experiments','Observe organisations','Collect data','Train & develop'] },
@@ -1108,8 +1142,9 @@ async function init(){
   });
 
   // 3. Set up week label
+  // Auto-compute current week label (Mon–Sun)
   const wEl = document.getElementById('hero-week');
-  if(wEl && DATA.week) wEl.textContent = `📅 Week of ${DATA.week}`;
+  if(wEl) wEl.textContent = '📅 ' + getCurrentWeekLabel();
 
   // 4. Stats + static sections
   nextLogId = Math.max(0, ...(DATA.logs||[]).map(l => l.id||0)) + 1;
@@ -1160,24 +1195,83 @@ function openModal(e){
   initModal();
 }
 
-// ── EMOJI LIST ──────────────────────────────────────────────
-const EMOJI_LIST = [
-  '🧪','🔬','📊','🗂️','📋','🔍','📈','📉','🎯','🧠',
-  '💡','📝','✍️','📖','🎧','🎤','📣','📦','🚀','⚡',
-  '🌱','🌿','🌸','🌊','🔥','⭐','✨','🏆','🎖️','💪',
-  '👀','🤝','💬','📅','⏳','✅','❌','🔄','🛠️','⚙️',
-  '🀄','🖊️','📌','🗒️','🧩','💎','🎲','🎨','🖼️','📷',
+// ── EMOJI PICKER ────────────────────────────────────────────
+const EMOJI_CATS = {
+  'Science': ['🧪','🔬','🧬','⚗️','🔭','📡','🧫','🧲','⚡','💊','🩺','🧯'],
+  'Data':    ['📊','📈','📉','📋','📁','🗂️','🗃️','📂','🔍','🔎','📌','📍'],
+  'Writing': ['📝','✍️','📖','📚','📓','📔','📒','📃','🖊️','✒️','🖋️','📄'],
+  'Media':   ['🎧','🎤','📣','📸','📷','🎬','🎥','📺','📻','🎙️','🖼️','🎨'],
+  'Work':    ['💼','📦','🚀','🎯','🏆','🎖️','💡','🛠️','⚙️','🔧','🔨','📐'],
+  'Nature':  ['🌱','🌿','🌸','🌊','🔥','⭐','✨','🌙','☀️','🌈','🍃','🌺'],
+  'People':  ['👀','🤝','💬','💪','🧠','🙌','👋','🫡','🤔','💭','❤️','🫶'],
+  'Status':  ['✅','⏳','🔄','📅','❌','⏰','🕐','💤','🆕','🔔','🚩','🎉'],
+  'Chinese': ['🀄','🈶','🈚','🀃','🀂','🀁','🀀','🎲','🧧','🏮','🎋','🎍'],
 ];
 
+let activeCat = 'Science';
+
 function initModal(){
-  // Auto-set today
   setToday();
-  // Build emoji picker
-  buildEmojiPicker();
-  // Clear previous selections
-  document.getElementById('f-emoji').value = '';
-  document.querySelectorAll('.emoji-opt').forEach(b => b.classList.remove('selected'));
+  buildEmojiCats();
+  renderEmojiGrid();
+  setEmoji('📌');
 }
+
+function buildEmojiCats(){
+  const el = document.getElementById('emoji-cats'); if(!el) return;
+  el.innerHTML = '';
+  Object.keys(EMOJI_CATS).forEach(cat => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'emoji-cat-btn' + (cat === activeCat ? ' active' : '');
+    b.textContent = cat;
+    b.onclick = () => { activeCat = cat; buildEmojiCats(); renderEmojiGrid(); };
+    el.appendChild(b);
+  });
+}
+
+function renderEmojiGrid(){
+  const grid = document.getElementById('emoji-grid'); if(!grid) return;
+  const current = document.getElementById('f-emoji').value;
+  grid.innerHTML = '';
+  (EMOJI_CATS[activeCat] || []).forEach(em => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'emoji-opt' + (em === current ? ' selected' : '');
+    btn.textContent = em;
+    btn.title = em;
+    btn.onclick = () => { setEmoji(em); closeEmojiDropdown(); };
+    grid.appendChild(btn);
+  });
+}
+
+function setEmoji(em){
+  document.getElementById('f-emoji').value = em;
+  const prev = document.getElementById('emoji-preview');
+  const lbl  = document.getElementById('emoji-trigger-label');
+  if(prev) prev.textContent = em;
+  if(lbl){ lbl.textContent = em + ' — click to change'; lbl.className = 'emoji-trigger-label picked'; }
+  document.querySelectorAll('.emoji-opt').forEach(b => b.classList.toggle('selected', b.textContent === em));
+}
+
+function toggleEmojiDropdown(){
+  const trigger  = document.getElementById('emoji-trigger');
+  const dropdown = document.getElementById('emoji-dropdown');
+  const isOpen   = dropdown.classList.contains('open');
+  if(isOpen){ closeEmojiDropdown(); }
+  else { trigger.classList.add('open'); dropdown.classList.add('open'); renderEmojiGrid(); }
+}
+
+function closeEmojiDropdown(){
+  document.getElementById('emoji-trigger')?.classList.remove('open');
+  document.getElementById('emoji-dropdown')?.classList.remove('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  const field = document.getElementById('emoji-field');
+  if(field && !field.contains(e.target)) closeEmojiDropdown();
+});
 
 function setToday(){
   const today = new Date();
@@ -1193,34 +1287,6 @@ function updateDateDisplay(iso){
   const d = new Date(iso+'T12:00:00');
   const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   el.textContent = '📅 ' + dayNames[d.getDay()] + ', ' + d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-}
-
-function buildEmojiPicker(){
-  const picker = document.getElementById('emoji-picker');
-  if(!picker) return;
-  picker.innerHTML = '';
-  EMOJI_LIST.forEach(em => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'emoji-opt';
-    btn.textContent = em;
-    btn.title = em;
-    btn.onclick = () => pickEmoji(em, btn);
-    picker.appendChild(btn);
-  });
-}
-
-function pickEmoji(em, btn){
-  document.getElementById('f-emoji').value = em;
-  document.querySelectorAll('.emoji-opt').forEach(b => b.classList.remove('selected'));
-  btn.classList.add('selected');
-}
-
-function syncEmojiPicker(){
-  const val = document.getElementById('f-emoji').value.trim();
-  document.querySelectorAll('.emoji-opt').forEach(b => {
-    b.classList.toggle('selected', b.textContent === val);
-  });
 }
 function closeModal(){ document.getElementById('modal-overlay').classList.remove('open'); document.body.style.overflow=''; }
 function handleOverlayClick(e){ if(e.target===document.getElementById('modal-overlay')) closeModal(); }
