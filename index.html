@@ -5,6 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STUDIORUM60S — Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script type="module">
+import { initializeApp }           from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, doc, getDoc, setDoc, onSnapshot }
+                                   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyBXNBmafxTtxw-OLMWJ9yp6if6JBYy9vGU",
+  authDomain:        "studiorum60s.firebaseapp.com",
+  projectId:         "studiorum60s",
+  storageBucket:     "studiorum60s.firebasestorage.app",
+  messagingSenderId: "464715333",
+  appId:             "1:464715333:web:d2903166739997c0af2d2c",
+  measurementId:     "G-YWLRVPRQT3"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// ── Firestore helpers ──────────────────────────────────────
+// Document: studiorum60s/ticks   → { geo: {id: true/false, ...}, cn: {...}, fs: {...} }
+const TICKS_DOC = doc(db, 'studiorum60s', 'ticks');
+
+async function loadTicks(){
+  try {
+    const snap = await getDoc(TICKS_DOC);
+    return snap.exists() ? snap.data() : { geo:{}, cn:{}, fs:{} };
+  } catch(e){ console.warn('Firestore loadTicks error:', e); return { geo:{}, cn:{}, fs:{} }; }
+}
+
+async function saveTick(proj, taskId, val){
+  try {
+    // Use dot-notation merge so we only overwrite this one field
+    await setDoc(TICKS_DOC, { [proj]: { [taskId]: val } }, { merge: true });
+  } catch(e){ console.warn('Firestore saveTick error:', e); }
+}
+
+// Expose to global scope so the classic scripts below can call them
+window._fb = { loadTicks, saveTick, onSnapshot, TICKS_DOC };
+</script>
 <style>
 :root {
   --pink:#f7b8c4; --pink-deep:#f090a4; --pink-pale:#fde8ed; --pink-wash:#fff0f3;
@@ -109,7 +148,7 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 .task-divider-line{flex:1;height:1px;background:var(--ink-faint)}
 .task-divider-label{font-family:'Baloo 2',cursive;font-size:.72rem;font-weight:800;color:#bbb;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
 
-/* ── CARD TASK LIST — display + tick only, no editing ── */
+/* ── CARD TASK LIST — display + tick only (tick state from Firebase) ── */
 .task-section{padding:0 22px 14px;flex:1}
 .task-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
 .task-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:12px;border:1.5px solid transparent;transition:border-color .12s,background .12s;cursor:pointer;user-select:none}
@@ -122,8 +161,9 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 .geo .task-check.done{background:var(--green-deep);border-color:var(--green-deep)}
 .cn  .task-check.done{background:var(--pink-deep);border-color:var(--pink-deep)}
 .fs  .task-check.done{background:#5ba3d4;border-color:#5ba3d4}
-.task-text{flex:1;font-size:.83rem;font-weight:600;line-height:1.35;color:var(--ink);padding:1px 4px}
+.task-text{flex:1;font-size:.83rem;font-weight:600;line-height:1.35;color:var(--ink);padding:1px 4px;transition:color .18s}
 .task-text.done{text-decoration:line-through;color:#ccc}
+.task-item.saving{opacity:.55;pointer-events:none}
 /* small hint pointing to builder */
 .card-task-hint{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;border:1.5px dashed rgba(45,45,45,.14);margin-top:4px;cursor:pointer;transition:border-color .12s,background .12s;text-decoration:none}
 .card-task-hint:hover{border-color:rgba(45,45,45,.32);background:rgba(45,45,45,.03)}
@@ -150,11 +190,7 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 .tool-task-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;min-height:80px}
 .tool-task-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;border:1px solid transparent;transition:border-color .12s,background .12s}
 .tool-task-row:hover{border-color:rgba(45,45,45,.12)}
-.tool-chk{width:20px;height:20px;border-radius:6px;border:var(--b);flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.65rem;color:#fff;background:var(--white);transition:background .12s,border-color .12s}
-.tool-chk.done{color:#fff}
-.tool-chk.done.geo{background:var(--green-deep);border-color:var(--green-deep)}
-.tool-chk.done.cn{background:var(--pink-deep);border-color:var(--pink-deep)}
-.tool-chk.done.fs{background:#5ba3d4;border-color:#5ba3d4}
+/* tool builder: no tick UI */
 .tool-task-inp{flex:1;border:none;background:transparent;outline:none;font-family:'Nunito',sans-serif;font-size:.83rem;font-weight:600;color:var(--ink);padding:1px 4px;border-radius:4px}
 .tool-task-inp:focus{background:rgba(45,45,45,.05)}
 .tool-task-inp.done{text-decoration:line-through;color:#ccc}
@@ -549,11 +585,11 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
 </footer>
 
 <script>
+<script>
 // ═══════════════════════════════════════════════════════════
 //  CONFIG
 // ═══════════════════════════════════════════════════════════
-const LOG_JSON  = 'data/studiorum-log.json';
-const LS_TASKS  = 'studiorum60s_tasks';
+const LOG_JSON = 'data/studiorum-log.json';
 
 const PROJ_NAME  = { geo:'Geolab Data', cn:'Chinese60s', fs:'Freesize English' };
 const PROJ_ICON  = { geo:'🧪', cn:'🀄', fs:'📖' };
@@ -571,10 +607,13 @@ const PROJ_DESC = {
 
 // ═══════════════════════════════════════════════════════════
 //  STATE
+// taskState[key] = [ { id, title }, ... ]   — NO done field, source = JSON
+// ticks[key]     = { taskId: true/false }    — source = Firestore (realtime)
 // ═══════════════════════════════════════════════════════════
-let DATA      = null;
-let taskState = {};           // source of truth — edit only via Task Builder
-let toolActive = 'geo';       // currently selected tab in tool
+let DATA       = null;
+let taskState  = { geo:[], cn:[], fs:[] };  // task definitions from JSON
+let ticks      = { geo:{}, cn:{}, fs:{} };  // tick state from Firebase
+let toolActive = 'geo';
 let toolLastJSON = '';
 let activeDay  = 'All';
 let activeProj = 'all';
@@ -582,36 +621,57 @@ let mSelProj   = null;
 let mSelStatus = 'done';
 let nextLogId  = 100;
 
-// ═══════════════════════════════════════════════════════════
-//  LOCALSTORAGE
-// ═══════════════════════════════════════════════════════════
-function saveTasks(){ try{ localStorage.setItem(LS_TASKS, JSON.stringify(taskState)); }catch(e){} }
-function loadTasksLS(){ try{ const r=localStorage.getItem(LS_TASKS); return r?JSON.parse(r):null; }catch(e){ return null; } }
 function uid(p){ return p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,5); }
 
 // ═══════════════════════════════════════════════════════════
-//  TASK STATE HELPERS
+//  FIREBASE TICK SYNC
 // ═══════════════════════════════════════════════════════════
-function calcPct(key){
-  const t=taskState[key]||[];
-  if(!t.length) return {done:0,total:0,pct:0};
-  const d=t.filter(x=>x.done).length;
-  return {done:d,total:t.length,pct:Math.round(d/t.length*100)};
+function waitForFirebase(cb){
+  // Firebase module sets window._fb asynchronously; poll until ready
+  if(window._fb){ cb(); return; }
+  const t = setInterval(()=>{ if(window._fb){ clearInterval(t); cb(); } }, 80);
+}
+
+function startFirebaseListener(){
+  const { onSnapshot, TICKS_DOC } = window._fb;
+  onSnapshot(TICKS_DOC, snap => {
+    const data = snap.exists() ? snap.data() : {};
+    ticks.geo = data.geo || {};
+    ticks.cn  = data.cn  || {};
+    ticks.fs  = data.fs  || {};
+    // re-render all three card lists with fresh tick data
+    ['geo','cn','fs'].forEach(k => {
+      renderCardTaskList(k);
+      refreshCardProgress(k);
+    });
+  }, err => console.warn('Firestore listener error:', err));
 }
 
 // ═══════════════════════════════════════════════════════════
-//  PROJECT CARDS — display + tick only, no editing
+//  PROGRESS HELPER (uses ticks, not taskState.done)
+// ═══════════════════════════════════════════════════════════
+function calcPct(key){
+  const tasks = taskState[key] || [];
+  if(!tasks.length) return { done:0, total:0, pct:0 };
+  const done = tasks.filter(t => ticks[key]?.[t.id]).length;
+  return { done, total:tasks.length, pct: Math.round(done/tasks.length*100) };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROJECT CARDS — display + tick only
 // ═══════════════════════════════════════════════════════════
 function buildProjectCards(){
-  const grid=document.getElementById('projects-grid'); if(!grid) return;
-  grid.innerHTML='';
-  ['geo','cn','fs'].forEach(key=>{
-    const meta=PROJ_DESC[key];
-    const {done,total,pct}=calcPct(key);
-    const pillarHTML=meta.pillars.map((p,i)=>`<div class="pillar"><div class="pillar-num">${String(i+1).padStart(2,'0')}</div>${p}</div>`).join('');
-    const card=document.createElement('div');
-    card.className=`project-card ${key}`;
-    card.innerHTML=`
+  const grid = document.getElementById('projects-grid'); if(!grid) return;
+  grid.innerHTML = '';
+  ['geo','cn','fs'].forEach(key => {
+    const meta = PROJ_DESC[key];
+    const { done, total, pct } = calcPct(key);
+    const pillarHTML = meta.pillars.map((p,i) =>
+      `<div class="pillar"><div class="pillar-num">${String(i+1).padStart(2,'0')}</div>${p}</div>`
+    ).join('');
+    const card = document.createElement('div');
+    card.className = `project-card ${key}`;
+    card.innerHTML = `
       <div class="card-strip"></div>
       <div class="card-header">
         <div class="card-icon">${PROJ_ICON[key]}</div>
@@ -621,7 +681,11 @@ function buildProjectCards(){
         <p class="card-desc">${meta.desc}</p>
         <div class="pillars">${pillarHTML}</div>
       </div>
-      <div class="task-divider"><div class="task-divider-line"></div><div class="task-divider-label">This week's tasks</div><div class="task-divider-line"></div></div>
+      <div class="task-divider">
+        <div class="task-divider-line"></div>
+        <div class="task-divider-label">This week's tasks</div>
+        <div class="task-divider-line"></div>
+      </div>
       <div class="task-section">
         <div class="task-list" id="tlist-${key}"></div>
         <a class="card-task-hint" href="#task-builder-section" onclick="scrollToBuilderAndSelect('${key}')">
@@ -642,279 +706,363 @@ function buildProjectCards(){
   });
 }
 
-// Scroll to builder and switch to the right project tab
 function scrollToBuilderAndSelect(key){
-  toolActive=key;
+  toolActive = key;
   buildToolTabs();
   renderToolPanel();
-  setTimeout(()=>{
-    const sec=document.getElementById('task-builder-section');
-    if(sec) sec.scrollIntoView({behavior:'smooth',block:'start'});
-  },50);
+  setTimeout(() => {
+    const sec = document.getElementById('task-builder-section');
+    if(sec) sec.scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 50);
 }
 
-// ── Card task list: display only, tick toggles done state ──
+// Renders card task list — tick state from `ticks` (Firebase)
 function renderCardTaskList(key){
-  const el=document.getElementById(`tlist-${key}`); if(!el) return;
-  el.innerHTML='';
-  (taskState[key]||[]).forEach(t=>el.appendChild(makeCardTaskEl(key,t)));
+  const el = document.getElementById(`tlist-${key}`); if(!el) return;
+  el.innerHTML = '';
+  (taskState[key] || []).forEach(t => el.appendChild(makeCardTaskEl(key, t)));
 }
 
-function makeCardTaskEl(key,task){
-  const row=document.createElement('div');
-  row.className='task-item';
-  row.dataset.id=task.id;
-  // clicking the whole row toggles done
-  row.onclick=()=>cardToggle(key,task.id);
+function makeCardTaskEl(key, task){
+  const isDone = !!(ticks[key]?.[task.id]);
+  const row = document.createElement('div');
+  row.className = 'task-item';
+  row.dataset.id = task.id;
+  row.onclick = () => cardToggle(key, task.id);
 
-  const chk=document.createElement('div');
-  chk.className=`task-check${task.done?' done':''}`;
-  chk.textContent=task.done?'✓':'';
+  const chk = document.createElement('div');
+  chk.className = `task-check${isDone ? ' done' : ''}`;
+  chk.textContent = isDone ? '✓' : '';
 
-  const txt=document.createElement('span');
-  txt.className=`task-text${task.done?' done':''}`;
-  txt.textContent=task.title;
+  const txt = document.createElement('span');
+  txt.className = `task-text${isDone ? ' done' : ''}`;
+  txt.textContent = task.title;
 
   row.appendChild(chk);
   row.appendChild(txt);
   return row;
 }
 
-// Toggle on card — persists tick state, syncs to builder
-function cardToggle(key,id){
-  const t=(taskState[key]||[]).find(x=>x.id===id);
-  if(!t) return;
-  t.done=!t.done;
-  saveTasks();
+// Toggle tick → save to Firestore → onSnapshot will re-render
+async function cardToggle(key, id){
+  if(!window._fb) return;
+  const newVal = !(ticks[key]?.[id]);
+  // Optimistic UI update
+  if(!ticks[key]) ticks[key] = {};
+  ticks[key][id] = newVal;
   renderCardTaskList(key);
   refreshCardProgress(key);
-  syncToolIfActive(key);
+  // Persist
+  await window._fb.saveTick(key, id, newVal);
 }
 
 function refreshCardProgress(key){
-  const {done,total,pct}=calcPct(key);
-  const b=document.getElementById(`cbar-${key}`); if(b) b.style.width=pct+'%';
-  const p=document.getElementById(`cpct-${key}`); if(p) p.textContent=pct+'%';
-  const f=document.getElementById(`cfrac-${key}`); if(f) f.textContent=`${done} of ${total} tasks done`;
+  const { done, total, pct } = calcPct(key);
+  const b = document.getElementById(`cbar-${key}`); if(b) b.style.width = pct+'%';
+  const p = document.getElementById(`cpct-${key}`); if(p) p.textContent = pct+'%';
+  const f = document.getElementById(`cfrac-${key}`); if(f) f.textContent = `${done} of ${total} tasks done`;
 }
 
-function syncToolIfActive(key){ if(toolActive===key) renderToolPanel(); }
-
 // ═══════════════════════════════════════════════════════════
-//  TASK BUILDER TOOL — full CRUD
+//  TASK BUILDER — CRUD only, NO tick
 // ═══════════════════════════════════════════════════════════
 function buildToolTabs(){
-  const el=document.getElementById('tool-tabs'); if(!el) return;
-  el.innerHTML='';
-  ['geo','cn','fs'].forEach(key=>{
-    const b=document.createElement('button');
-    b.className='tool-tab'+(toolActive===key?` active-${key}`:'');
-    b.textContent=PROJ_NAME[key];
-    b.onclick=()=>{ toolActive=key; buildToolTabs(); renderToolPanel(); };
+  const el = document.getElementById('tool-tabs'); if(!el) return;
+  el.innerHTML = '';
+  ['geo','cn','fs'].forEach(key => {
+    const b = document.createElement('button');
+    b.className = 'tool-tab' + (toolActive === key ? ` active-${key}` : '');
+    b.textContent = PROJ_NAME[key];
+    b.onclick = () => { toolActive = key; buildToolTabs(); renderToolPanel(); };
     el.appendChild(b);
   });
 }
 
 function renderToolPanel(){
-  const list=document.getElementById('tool-task-list'); if(!list) return;
-  list.innerHTML='';
-  (taskState[toolActive]||[]).forEach(t=>list.appendChild(makeToolTaskEl(toolActive,t)));
+  const list = document.getElementById('tool-task-list'); if(!list) return;
+  list.innerHTML = '';
+  (taskState[toolActive] || []).forEach(t => list.appendChild(makeToolTaskEl(toolActive, t)));
   refreshToolProgress();
 }
 
-function makeToolTaskEl(key,task){
-  const row=document.createElement('div'); row.className='tool-task-row';
-  const chk=document.createElement('div'); chk.className=`tool-chk${task.done?' done':''} ${key}`; chk.textContent=task.done?'✓':''; chk.onclick=()=>toolToggle(key,task.id);
-  const txt=document.createElement('input'); txt.type='text'; txt.className=`tool-task-inp${task.done?' done':''}`; txt.value=task.title;
-  txt.addEventListener('blur',()=>{
-    const v=txt.value.trim();
-    if(!v){ toolDel(key,task.id); return; }
-    const t=(taskState[key]||[]).find(x=>x.id===task.id);
-    if(t){ t.title=v; saveTasks(); renderCardTaskList(key); }
+function makeToolTaskEl(key, task){
+  const row = document.createElement('div');
+  row.className = 'tool-task-row';
+
+  // drag handle / order indicator
+  const num = document.createElement('span');
+  num.style.cssText = 'font-family:"Baloo 2",cursive;font-size:.7rem;color:#ccc;width:20px;text-align:center;flex-shrink:0';
+  num.textContent = '⠿';
+
+  const txt = document.createElement('input');
+  txt.type = 'text';
+  txt.className = 'tool-task-inp';
+  txt.value = task.title;
+  txt.addEventListener('blur', () => {
+    const v = txt.value.trim();
+    if(!v){ toolDel(key, task.id); return; }
+    const t = (taskState[key] || []).find(x => x.id === task.id);
+    if(t){ t.title = v; renderCardTaskList(key); }
   });
-  txt.addEventListener('keydown',e=>{ if(e.key==='Enter')txt.blur(); if(e.key==='Escape'){txt.value=task.title;txt.blur();} });
-  const del=document.createElement('button'); del.className='tool-del'; del.textContent='×'; del.onclick=()=>toolDel(key,task.id);
-  row.appendChild(chk); row.appendChild(txt); row.appendChild(del);
+  txt.addEventListener('keydown', e => {
+    if(e.key === 'Enter') txt.blur();
+    if(e.key === 'Escape'){ txt.value = task.title; txt.blur(); }
+  });
+
+  const del = document.createElement('button');
+  del.className = 'tool-del';
+  del.textContent = '×';
+  del.onclick = () => toolDel(key, task.id);
+
+  row.appendChild(num);
+  row.appendChild(txt);
+  row.appendChild(del);
   return row;
 }
 
-function toolToggle(key,id){
-  const t=(taskState[key]||[]).find(x=>x.id===id); if(!t) return;
-  t.done=!t.done; saveTasks(); renderToolPanel(); renderCardTaskList(key); refreshCardProgress(key);
-}
-function toolDel(key,id){
-  taskState[key]=(taskState[key]||[]).filter(x=>x.id!==id);
-  saveTasks(); renderToolPanel(); renderCardTaskList(key); refreshCardProgress(key);
+function toolDel(key, id){
+  taskState[key] = (taskState[key] || []).filter(x => x.id !== id);
+  renderToolPanel();
+  renderCardTaskList(key);
+  refreshCardProgress(key);
 }
 
 function refreshToolProgress(){
-  const {done,total,pct}=calcPct(toolActive);
-  const fill=document.getElementById('tool-prog-fill'); if(fill){ fill.className=`tool-prog-fill ${toolActive}`; fill.style.width=pct+'%'; }
-  const pctEl=document.getElementById('tool-prog-pct'); if(pctEl){ pctEl.className=`tool-prog-pct ${toolActive}`; pctEl.textContent=pct+'%'; }
-  const frac=document.getElementById('tool-frac'); if(frac) frac.textContent=`${done} of ${total} tasks done`;
+  const { done, total, pct } = calcPct(toolActive);
+  const fill   = document.getElementById('tool-prog-fill');
+  const pctEl  = document.getElementById('tool-prog-pct');
+  const frac   = document.getElementById('tool-frac');
+  if(fill)  { fill.className = `tool-prog-fill ${toolActive}`; fill.style.width = pct+'%'; }
+  if(pctEl) { pctEl.className = `tool-prog-pct ${toolActive}`; pctEl.textContent = pct+'%'; }
+  if(frac)  frac.textContent = `${done} of ${total} tasks done`;
 }
 
-// Add task via tool panel input
-document.addEventListener('DOMContentLoaded',()=>{
-  const inp=document.getElementById('tool-add-inp');
-  if(inp) inp.addEventListener('keydown',e=>{
-    if(e.key!=='Enter') return;
-    const v=inp.value.trim(); if(!v) return;
-    (taskState[toolActive]=taskState[toolActive]||[]).push({id:uid(toolActive),title:v,done:false});
-    saveTasks(); renderToolPanel(); renderCardTaskList(toolActive); refreshCardProgress(toolActive);
-    inp.value=''; inp.focus();
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('tool-add-inp');
+  if(inp) inp.addEventListener('keydown', e => {
+    if(e.key !== 'Enter') return;
+    const v = inp.value.trim(); if(!v) return;
+    (taskState[toolActive] = taskState[toolActive] || []).push({ id: uid(toolActive), title: v });
+    renderToolPanel();
+    renderCardTaskList(toolActive);
+    refreshCardProgress(toolActive);
+    inp.value = ''; inp.focus();
   });
 });
 
-// JSON export — always full structure: { week, projects: { geo, cn, fs } }
-function buildFullExport(){
+// JSON export — tasks without done field
+function buildExportJSON(){
   const weekVal = (document.getElementById('tool-week-inp')?.value.trim()) || (DATA?.week) || '';
   const projects = {};
-  ['geo','cn','fs'].forEach(k=>{
-    projects[k] = { tasks: (taskState[k]||[]).map(t=>({id:t.id, title:t.title, done:t.done})) };
+  ['geo','cn','fs'].forEach(k => {
+    projects[k] = { tasks: (taskState[k] || []).map(t => ({ id: t.id, title: t.title })) };
   });
   return JSON.stringify({ week: weekVal, projects }, null, 2);
 }
 
 function showToolJSON(json){
-  toolLastJSON=json;
-  document.getElementById('tool-json-placeholder').style.display='none';
-  const wrap=document.getElementById('tool-json-wrap'); wrap.classList.add('show');
-  document.getElementById('tool-json-out').textContent=json;
+  toolLastJSON = json;
+  document.getElementById('tool-json-placeholder').style.display = 'none';
+  const wrap = document.getElementById('tool-json-wrap');
+  wrap.classList.add('show');
+  document.getElementById('tool-json-out').textContent = json;
 }
 
-function toolExportAll(){ showToolJSON(buildFullExport()); }
+function toolExportAll(){ showToolJSON(buildExportJSON()); }
 
 function toolCopyJSON(){
-  const text=toolLastJSON||buildFullExport();
-  navigator.clipboard.writeText(text).then(()=>{
-    const b=document.getElementById('tool-copy-btn');
-    b.textContent='Copied ✓'; b.className='tool-btn copied';
-    setTimeout(()=>{ b.textContent='Copy JSON'; b.className='tool-btn copy-btn'; },2000);
+  const text = toolLastJSON || buildExportJSON();
+  navigator.clipboard.writeText(text).then(() => {
+    const b = document.getElementById('tool-copy-btn');
+    b.textContent = 'Copied ✓'; b.className = 'tool-btn copied';
+    setTimeout(() => { b.textContent = 'Copy JSON'; b.className = 'tool-btn copy-btn'; }, 2000);
   });
 }
 
 function toolReset(){
   if(!confirm(`Clear all tasks for ${PROJ_NAME[toolActive]}?`)) return;
-  taskState[toolActive]=[];
-  saveTasks(); renderToolPanel(); renderCardTaskList(toolActive); refreshCardProgress(toolActive);
+  taskState[toolActive] = [];
+  renderToolPanel();
+  renderCardTaskList(toolActive);
+  refreshCardProgress(toolActive);
 }
 
 // ═══════════════════════════════════════════════════════════
 //  STATS
 // ═══════════════════════════════════════════════════════════
-function countUp(id,n,dur=700){ const el=document.getElementById(id); if(!el) return; let v=0; const s=n/(dur/16); const t=setInterval(()=>{ v=Math.min(v+s,n); el.textContent=Math.round(v); if(v>=n) clearInterval(t); },16); }
-function calcStreak(logs){ if(!logs.length) return 0; const days=[...new Set(logs.map(l=>l.date))].sort().reverse(); let s=1; for(let i=1;i<days.length;i++){ const a=new Date(days[i-1]),b=new Date(days[i]); if((a-b)/(864e5)<=1) s++; else break; } return s; }
-function buildStats(logs){ countUp('stat-total',logs.length); countUp('stat-geo',logs.filter(l=>l.project==='geo').length); countUp('stat-cn',logs.filter(l=>l.project==='cn').length); countUp('stat-fs',logs.filter(l=>l.project==='fs').length); countUp('stat-streak',calcStreak(logs)); }
+function countUp(id, n, dur=700){
+  const el = document.getElementById(id); if(!el) return;
+  let v = 0; const s = n/(dur/16);
+  const t = setInterval(() => { v = Math.min(v+s, n); el.textContent = Math.round(v); if(v >= n) clearInterval(t); }, 16);
+}
+function calcStreak(logs){
+  if(!logs.length) return 0;
+  const days = [...new Set(logs.map(l => l.date))].sort().reverse();
+  let s = 1;
+  for(let i = 1; i < days.length; i++){
+    const a = new Date(days[i-1]), b = new Date(days[i]);
+    if((a-b)/864e5 <= 1) s++; else break;
+  }
+  return s;
+}
+function buildStats(logs){
+  countUp('stat-total', logs.length);
+  countUp('stat-geo',   logs.filter(l => l.project === 'geo').length);
+  countUp('stat-cn',    logs.filter(l => l.project === 'cn').length);
+  countUp('stat-fs',    logs.filter(l => l.project === 'fs').length);
+  countUp('stat-streak', calcStreak(logs));
+}
 
 // ═══════════════════════════════════════════════════════════
 //  HEATMAP
 // ═══════════════════════════════════════════════════════════
 function buildHeatmap(){
-  const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const rows=[{cls:'geo',cells:['geo-2','geo-3','geo-1','geo-2','empty','geo-1','empty']},{cls:'cn',cells:['cn-2','cn-3','cn-3','cn-1','empty','cn-1','cn-1']},{cls:'fs',cells:['fs-2','fs-3','fs-2','fs-3','empty','fs-1','fs-2']}];
-  const g=document.getElementById('heatmap'); if(!g) return;
-  g.innerHTML='<div></div>'+days.map(d=>`<div class="heatmap-dh">${d}</div>`).join('');
-  rows.forEach(row=>{ g.innerHTML+=`<div class="heatmap-rl ${row.cls}">${row.cls.toUpperCase()}</div>`; row.cells.forEach((cls,i)=>{ g.innerHTML+=`<div class="hcell ${cls}${i===2?' today':''}" title="${PROJ_NAME[row.cls]} · ${days[i]}"></div>`; }); });
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const rows = [
+    { cls:'geo', cells:['geo-2','geo-3','geo-1','geo-2','empty','geo-1','empty'] },
+    { cls:'cn',  cells:['cn-2','cn-3','cn-3','cn-1','empty','cn-1','cn-1'] },
+    { cls:'fs',  cells:['fs-2','fs-3','fs-2','fs-3','empty','fs-1','fs-2'] },
+  ];
+  const g = document.getElementById('heatmap'); if(!g) return;
+  g.innerHTML = '<div></div>' + days.map(d => `<div class="heatmap-dh">${d}</div>`).join('');
+  rows.forEach(row => {
+    g.innerHTML += `<div class="heatmap-rl ${row.cls}">${row.cls.toUpperCase()}</div>`;
+    row.cells.forEach((cls, i) => {
+      g.innerHTML += `<div class="hcell ${cls}${i===2?' today':''}" title="${PROJ_NAME[row.cls]} · ${days[i]}"></div>`;
+    });
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
 //  FILTERS + LOG GRID
 // ═══════════════════════════════════════════════════════════
 function buildFilters(){
-  const row=document.getElementById('filters-row'); if(!row) return;
-  row.innerHTML='';
-  DAYS_ORDER.forEach(d=>{ const b=document.createElement('button'); b.className='day-btn'+(d===activeDay?' active':''); b.textContent=d==='All'?'All days':d; b.onclick=()=>{ activeDay=d; buildFilters(); buildLogGrid(); }; row.appendChild(b); });
-  const sep=document.createElement('div'); sep.className='filter-sep'; row.appendChild(sep);
-  PROJS_ORD.forEach(p=>{ const b=document.createElement('button'); b.className='proj-btn'+(p===activeProj?` active-${p}`:''); b.textContent=PROJ_LBL[p]; b.onclick=()=>{ activeProj=p; buildFilters(); buildLogGrid(); }; row.appendChild(b); });
+  const row = document.getElementById('filters-row'); if(!row) return;
+  row.innerHTML = '';
+  DAYS_ORDER.forEach(d => {
+    const b = document.createElement('button');
+    b.className = 'day-btn' + (d === activeDay ? ' active' : '');
+    b.textContent = d === 'All' ? 'All days' : d;
+    b.onclick = () => { activeDay = d; buildFilters(); buildLogGrid(); };
+    row.appendChild(b);
+  });
+  const sep = document.createElement('div'); sep.className = 'filter-sep'; row.appendChild(sep);
+  PROJS_ORD.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'proj-btn' + (p === activeProj ? ` active-${p}` : '');
+    b.textContent = PROJ_LBL[p];
+    b.onclick = () => { activeProj = p; buildFilters(); buildLogGrid(); };
+    row.appendChild(b);
+  });
 }
 
-function showSkeleton(){ const el=document.getElementById('log-grid'); el.className='sk-grid'; el.innerHTML=Array.from({length:6},()=>`<div class="sk-card"><div class="sk-banner"></div><div class="sk-body"><div class="sk-line"></div><div class="sk-line short"></div></div></div>`).join(''); }
+function showSkeleton(){
+  const el = document.getElementById('log-grid');
+  el.className = 'sk-grid';
+  el.innerHTML = Array.from({length:6}, () =>
+    `<div class="sk-card"><div class="sk-banner"></div><div class="sk-body"><div class="sk-line"></div><div class="sk-line short"></div></div></div>`
+  ).join('');
+}
 
 function buildLogGrid(){
-  const el=document.getElementById('log-grid'); if(!el) return;
-  el.className='log-grid';
-  let data=DATA?.logs||[];
-  if(activeDay!=='All') data=data.filter(l=>l.day===activeDay);
-  if(activeProj!=='all') data=data.filter(l=>l.project===activeProj);
-  if(!data.length){ el.innerHTML=`<div class="empty-state"><div class="ei">🌸</div><p>No entries for this filter.</p></div>`; return; }
-  el.innerHTML='';
-  data.forEach((log,i)=>{ const c=document.createElement('div'); c.className='log-card'; c.style.animationDelay=`${i*.055}s`;
-    c.innerHTML=`<div class="log-banner ${log.project}"><span class="log-emoji">${log.emoji||'📌'}</span><span class="log-src">${PROJ_NAME[log.project]||log.project}</span></div><div class="log-body"><div class="log-date">📅 ${log.date}</div><h4><span class="sdot ${log.status}"></span>${log.title||'Untitled'}</h4><p>${log.desc||''}</p><div class="log-tags">${(log.tags||[]).map(t=>`<span class="log-tag ${log.project}">${t}</span>`).join('')}<span class="log-tag status-${log.status}">${STATUS_LBL[log.status]||log.status}</span></div></div>`;
+  const el = document.getElementById('log-grid'); if(!el) return;
+  el.className = 'log-grid';
+  let data = DATA?.logs || [];
+  if(activeDay !== 'All') data = data.filter(l => l.day === activeDay);
+  if(activeProj !== 'all') data = data.filter(l => l.project === activeProj);
+  if(!data.length){
+    el.innerHTML = `<div class="empty-state"><div class="ei">🌸</div><p>No entries for this filter.</p></div>`;
+    return;
+  }
+  el.innerHTML = '';
+  data.forEach((log, i) => {
+    const c = document.createElement('div');
+    c.className = 'log-card';
+    c.style.animationDelay = `${i*.055}s`;
+    c.innerHTML = `
+      <div class="log-banner ${log.project}">
+        <span class="log-emoji">${log.emoji||'📌'}</span>
+        <span class="log-src">${PROJ_NAME[log.project]||log.project}</span>
+      </div>
+      <div class="log-body">
+        <div class="log-date">📅 ${log.date}</div>
+        <h4><span class="sdot ${log.status}"></span>${log.title||'Untitled'}</h4>
+        <p>${log.desc||''}</p>
+        <div class="log-tags">
+          ${(log.tags||[]).map(t => `<span class="log-tag ${log.project}">${t}</span>`).join('')}
+          <span class="log-tag status-${log.status}">${STATUS_LBL[log.status]||log.status}</span>
+        </div>
+      </div>`;
     el.appendChild(c);
   });
 }
 
 // ═══════════════════════════════════════════════════════════
-//  LOAD JSON — no fallback, fetch only
+//  INIT
 // ═══════════════════════════════════════════════════════════
-function showFetchError(){
-  // stats bar
-  ['stat-total','stat-geo','stat-cn','stat-fs','stat-streak'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.textContent='—';
-  });
-  // hero week
-  const wEl=document.getElementById('hero-week');
-  if(wEl) wEl.textContent='';
-
-  // projects grid
-  const grid=document.getElementById('projects-grid');
-  if(grid){
-    grid.innerHTML=`
-      <div style="grid-column:1/-1;padding:48px 24px;text-align:center;border:2px dashed rgba(45,45,45,.14);border-radius:22px">
-        <div style="font-size:2rem;margin-bottom:10px">📂</div>
-        <p style="font-family:'Baloo 2',cursive;font-size:1rem;font-weight:800;margin-bottom:6px">No data file found</p>
-        <p style="font-size:.83rem;color:#999;font-weight:600;line-height:1.7">Place <code style="background:var(--green-pale);padding:1px 7px;border-radius:5px;color:#3a7a52">studiorum-log.json</code> inside a <code style="background:var(--wash-blue);padding:1px 7px;border-radius:5px;color:#3a65a0">data/</code> folder next to this HTML file, then reload.</p>
-      </div>`;
-  }
-
-  // task builder tabs still usable (works off localStorage)
-  buildToolTabs();
-  renderToolPanel();
-  buildHeatmap();
-
-  // log section
-  const fr=document.getElementById('filters-row'); if(fr) fr.innerHTML='';
-  const lg=document.getElementById('log-grid');
-  if(lg){
-    lg.className='log-grid';
-    lg.innerHTML=`
-      <div class="empty-state">
-        <div class="ei">📋</div>
-        <p>Load <strong>studiorum-log.json</strong> to see your progress log.</p>
-      </div>`;
-  }
-}
-
 async function init(){
   showSkeleton();
-  try{
-    const r=await fetch(LOG_JSON);
+
+  // 1. Fetch JSON
+  try {
+    const r = await fetch(LOG_JSON);
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    DATA=await r.json();
+    DATA = await r.json();
   } catch(e){
-    console.warn('studiorum-log.json not found or invalid:', e.message);
-    DATA=null;
+    console.warn('studiorum-log.json not found:', e.message);
+    DATA = null;
   }
 
-  if(!DATA){ showFetchError(); return; }
+  if(!DATA){
+    showFetchError();
+    return;
+  }
 
-  // seed tasks: localStorage > JSON
-  const saved=loadTasksLS();
-  if(saved){ taskState=saved; }
-  else{ taskState={}; ['geo','cn','fs'].forEach(k=>{ taskState[k]=(DATA.projects?.[k]?.tasks||[]).map(t=>({...t})); }); saveTasks(); }
+  // 2. Seed taskState from JSON (no done field)
+  ['geo','cn','fs'].forEach(k => {
+    taskState[k] = (DATA.projects?.[k]?.tasks || []).map(t => ({ id: t.id, title: t.title }));
+  });
 
-  nextLogId=Math.max(0,...(DATA.logs||[]).map(l=>l.id||0))+1;
-  const wEl=document.getElementById('hero-week'); if(wEl&&DATA.week) wEl.textContent=`📅 Week of ${DATA.week}`;
-  const wInp=document.getElementById('tool-week-inp'); if(wInp&&DATA.week) wInp.value=DATA.week;
+  // 3. Set up week label
+  const wEl = document.getElementById('hero-week');
+  if(wEl && DATA.week) wEl.textContent = `📅 Week of ${DATA.week}`;
 
-  buildStats(DATA.logs||[]);
-  buildProjectCards();
+  // 4. Stats + static sections
+  nextLogId = Math.max(0, ...(DATA.logs||[]).map(l => l.id||0)) + 1;
+  buildStats(DATA.logs || []);
+  buildProjectCards();   // renders with ticks={} initially
   buildToolTabs();
   renderToolPanel();
   buildHeatmap();
   buildFilters();
   buildLogGrid();
+
+  // 5. Connect Firebase — load ticks then start realtime listener
+  waitForFirebase(async () => {
+    ticks = await window._fb.loadTicks();
+    ['geo','cn','fs'].forEach(k => { renderCardTaskList(k); refreshCardProgress(k); });
+    startFirebaseListener();   // keeps in sync across devices
+  });
+}
+
+function showFetchError(){
+  ['stat-total','stat-geo','stat-cn','stat-fs','stat-streak'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.textContent = '—';
+  });
+  const grid = document.getElementById('projects-grid');
+  if(grid) grid.innerHTML = `
+    <div style="grid-column:1/-1;padding:48px 24px;text-align:center;border:2px dashed rgba(45,45,45,.14);border-radius:22px">
+      <div style="font-size:2rem;margin-bottom:10px">📂</div>
+      <p style="font-family:'Baloo 2',cursive;font-size:1rem;font-weight:800;margin-bottom:6px">No data file found</p>
+      <p style="font-size:.83rem;color:#999;font-weight:600;line-height:1.7">Place
+        <code style="background:var(--green-pale);padding:1px 7px;border-radius:5px;color:#3a7a52">studiorum-log.json</code>
+        inside a <code style="background:var(--wash-blue);padding:1px 7px;border-radius:5px;color:#3a65a0">data/</code>
+        folder next to this HTML file, then reload.</p>
+    </div>`;
+  buildToolTabs(); renderToolPanel(); buildHeatmap();
+  const fr = document.getElementById('filters-row'); if(fr) fr.innerHTML = '';
+  const lg = document.getElementById('log-grid');
+  if(lg){ lg.className='log-grid'; lg.innerHTML=`<div class="empty-state"><div class="ei">📋</div><p>Load <strong>studiorum-log.json</strong> to see your progress log.</p></div>`; }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -938,10 +1086,13 @@ function generateJSON(){
 }
 function copyLogJSON(){ navigator.clipboard.writeText(document.getElementById('jp').textContent).then(()=>{ const b=document.getElementById('copy-btn-m'); b.textContent='✓ Copied!'; b.classList.add('copied'); setTimeout(()=>{ b.textContent='Copy to clipboard'; b.classList.remove('copied'); },2000); }); }
 
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
-document.addEventListener('DOMContentLoaded',()=>{
-  const btn=document.querySelector('.menu-toggle'), nav=document.querySelector('nav');
-  if(btn&&nav) btn.addEventListener('click',()=>{ nav.classList.toggle('show'); btn.innerHTML=nav.classList.contains('show')?'&#10005;':'&#9776;'; });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.querySelector('.menu-toggle'), nav = document.querySelector('nav');
+  if(btn && nav) btn.addEventListener('click', () => {
+    nav.classList.toggle('show');
+    btn.innerHTML = nav.classList.contains('show') ? '&#10005;' : '&#9776;';
+  });
   selStatus('done');
   init();
 });
