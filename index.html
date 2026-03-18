@@ -5,44 +5,46 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STUDIORUM60S — Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script type="module">
-import { initializeApp }           from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, doc, getDoc, setDoc, onSnapshot }
-                                   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+<!-- Firebase v9 compat (global scope, no import needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+(function(){
+  const firebaseConfig = {
+    apiKey:            "AIzaSyBXNBmafxTtxw-OLMWJ9yp6if6JBYy9vGU",
+    authDomain:        "studiorum60s.firebaseapp.com",
+    projectId:         "studiorum60s",
+    storageBucket:     "studiorum60s.firebasestorage.app",
+    messagingSenderId: "464715333",
+    appId:             "1:464715333:web:d2903166739997c0af2d2c",
+    measurementId:     "G-YWLRVPRQT3"
+  };
 
-const firebaseConfig = {
-  apiKey:            "AIzaSyBXNBmafxTtxw-OLMWJ9yp6if6JBYy9vGU",
-  authDomain:        "studiorum60s.firebaseapp.com",
-  projectId:         "studiorum60s",
-  storageBucket:     "studiorum60s.firebasestorage.app",
-  messagingSenderId: "464715333",
-  appId:             "1:464715333:web:d2903166739997c0af2d2c",
-  measurementId:     "G-YWLRVPRQT3"
-};
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const TICKS_DOC = db.collection('studiorum60s').doc('ticks');
 
-const app = initializeApp(firebaseConfig);
-const db  = getFirestore(app);
+  async function loadTicks(){
+    try {
+      const snap = await TICKS_DOC.get();
+      return snap.exists ? snap.data() : { geo:{}, cn:{}, fs:{} };
+    } catch(e){ console.warn('Firestore loadTicks error:', e); return { geo:{}, cn:{}, fs:{} }; }
+  }
 
-// ── Firestore helpers ──────────────────────────────────────
-// Document: studiorum60s/ticks   → { geo: {id: true/false, ...}, cn: {...}, fs: {...} }
-const TICKS_DOC = doc(db, 'studiorum60s', 'ticks');
+  async function saveTick(proj, taskId, val){
+    try {
+      await TICKS_DOC.set({ [proj]: { [taskId]: val } }, { merge: true });
+    } catch(e){ console.warn('Firestore saveTick error:', e); }
+  }
 
-async function loadTicks(){
-  try {
-    const snap = await getDoc(TICKS_DOC);
-    return snap.exists() ? snap.data() : { geo:{}, cn:{}, fs:{} };
-  } catch(e){ console.warn('Firestore loadTicks error:', e); return { geo:{}, cn:{}, fs:{} }; }
-}
+  function onSnapshot(cb){
+    return TICKS_DOC.onSnapshot(snap => {
+      cb(snap.exists ? snap.data() : { geo:{}, cn:{}, fs:{} });
+    }, err => console.warn('Firestore listener error:', err));
+  }
 
-async function saveTick(proj, taskId, val){
-  try {
-    // Use dot-notation merge so we only overwrite this one field
-    await setDoc(TICKS_DOC, { [proj]: { [taskId]: val } }, { merge: true });
-  } catch(e){ console.warn('Firestore saveTick error:', e); }
-}
-
-// Expose to global scope so the classic scripts below can call them
-window._fb = { loadTicks, saveTick, onSnapshot, TICKS_DOC };
+  window._fb = { loadTicks, saveTick, onSnapshot };
+})();
 </script>
 <style>
 :root {
@@ -633,18 +635,16 @@ function waitForFirebase(cb){
 }
 
 function startFirebaseListener(){
-  const { onSnapshot, TICKS_DOC } = window._fb;
-  onSnapshot(TICKS_DOC, snap => {
-    const data = snap.exists() ? snap.data() : {};
+  // window._fb.onSnapshot wraps TICKS_DOC.onSnapshot, callback receives plain data object
+  window._fb.onSnapshot(data => {
     ticks.geo = data.geo || {};
     ticks.cn  = data.cn  || {};
     ticks.fs  = data.fs  || {};
-    // re-render all three card lists with fresh tick data
     ['geo','cn','fs'].forEach(k => {
       renderCardTaskList(k);
       refreshCardProgress(k);
     });
-  }, err => console.warn('Firestore listener error:', err));
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
