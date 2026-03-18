@@ -455,6 +455,21 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
   nav.show{display:flex}
   nav ul{flex-direction:column;align-items:center}
 }
+
+/* DATE AUTO ROW */
+.date-auto-row{display:flex;gap:8px;align-items:center}
+.date-auto-row input{flex:1}
+.date-today-btn{font-family:'Baloo 2',cursive;font-size:.78rem;font-weight:800;background:var(--wash-yellow);border:var(--b);border-radius:50px;padding:5px 14px;cursor:pointer;white-space:nowrap;box-shadow:var(--sh-sm);transition:transform .1s}
+.date-today-btn:hover{transform:translateY(-1px)}
+.date-display{font-family:'Baloo 2',cursive;font-size:.82rem;font-weight:700;color:var(--green-deep);margin-top:5px;min-height:1.2em;letter-spacing:.02em}
+
+/* EMOJI PICKER */
+.emoji-input-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.emoji-hint{font-size:.75rem;font-weight:700;color:#bbb}
+.emoji-picker{display:flex;flex-wrap:wrap;gap:5px}
+.emoji-opt{width:36px;height:36px;border-radius:10px;border:1.5px solid transparent;background:var(--cream);cursor:pointer;font-size:1.25rem;display:flex;align-items:center;justify-content:center;transition:border-color .1s,background .1s,transform .1s}
+.emoji-opt:hover{border-color:rgba(45,45,45,.2);background:var(--white);transform:scale(1.15)}
+.emoji-opt.selected{border-color:var(--ink);background:var(--white);box-shadow:var(--sh-sm)}
 </style>
 </head>
 <body>
@@ -605,9 +620,21 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
           <button class="psel-btn" data-proj="fs"  onclick="selProj('fs')">📖 Freesize</button>
         </div>
       </div>
-      <div class="form-row">
-        <div class="fg"><label class="flabel">Date</label><input type="date" id="f-date"></div>
-        <div class="fg"><label class="flabel">Emoji</label><input type="text" id="f-emoji" placeholder="🧪" maxlength="4" style="font-size:1.4rem;text-align:center"></div>
+      <div class="fg">
+        <label class="flabel">Date</label>
+        <div class="date-auto-row">
+          <input type="date" id="f-date">
+          <button type="button" class="date-today-btn" onclick="setToday()">Today</button>
+        </div>
+        <div class="date-display" id="date-display"></div>
+      </div>
+      <div class="fg">
+        <label class="flabel">Emoji</label>
+        <div class="emoji-input-row">
+          <input type="text" id="f-emoji" placeholder="📌" maxlength="4" style="font-size:1.4rem;text-align:center;width:64px;flex-shrink:0" oninput="syncEmojiPicker()">
+          <span class="emoji-hint">or pick one:</span>
+        </div>
+        <div class="emoji-picker" id="emoji-picker"></div>
       </div>
       <div class="fg"><label class="flabel">Title</label><input type="text" id="f-title" placeholder="What did you work on?"></div>
       <div class="fg"><label class="flabel">Notes / Observations</label><textarea id="f-desc" placeholder="What happened? What did you notice? Any data?"></textarea></div>
@@ -1125,7 +1152,76 @@ function showFetchError(){
 // ═══════════════════════════════════════════════════════════
 //  LOG MODAL
 // ═══════════════════════════════════════════════════════════
-function openModal(e){ e&&e.preventDefault(); document.getElementById('modal-overlay').classList.add('open'); document.body.style.overflow='hidden'; document.getElementById('f-date').value=new Date().toISOString().split('T')[0]; document.getElementById('mstrip').className='mstrip default'; }
+function openModal(e){
+  e&&e.preventDefault();
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow='hidden';
+  document.getElementById('mstrip').className='mstrip default';
+  initModal();
+}
+
+// ── EMOJI LIST ──────────────────────────────────────────────
+const EMOJI_LIST = [
+  '🧪','🔬','📊','🗂️','📋','🔍','📈','📉','🎯','🧠',
+  '💡','📝','✍️','📖','🎧','🎤','📣','📦','🚀','⚡',
+  '🌱','🌿','🌸','🌊','🔥','⭐','✨','🏆','🎖️','💪',
+  '👀','🤝','💬','📅','⏳','✅','❌','🔄','🛠️','⚙️',
+  '🀄','🖊️','📌','🗒️','🧩','💎','🎲','🎨','🖼️','📷',
+];
+
+function initModal(){
+  // Auto-set today
+  setToday();
+  // Build emoji picker
+  buildEmojiPicker();
+  // Clear previous selections
+  document.getElementById('f-emoji').value = '';
+  document.querySelectorAll('.emoji-opt').forEach(b => b.classList.remove('selected'));
+}
+
+function setToday(){
+  const today = new Date();
+  const iso = today.toISOString().split('T')[0];
+  document.getElementById('f-date').value = iso;
+  updateDateDisplay(iso);
+}
+
+function updateDateDisplay(iso){
+  const el = document.getElementById('date-display');
+  if(!el) return;
+  if(!iso){ el.textContent=''; return; }
+  const d = new Date(iso+'T12:00:00');
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  el.textContent = '📅 ' + dayNames[d.getDay()] + ', ' + d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+}
+
+function buildEmojiPicker(){
+  const picker = document.getElementById('emoji-picker');
+  if(!picker) return;
+  picker.innerHTML = '';
+  EMOJI_LIST.forEach(em => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'emoji-opt';
+    btn.textContent = em;
+    btn.title = em;
+    btn.onclick = () => pickEmoji(em, btn);
+    picker.appendChild(btn);
+  });
+}
+
+function pickEmoji(em, btn){
+  document.getElementById('f-emoji').value = em;
+  document.querySelectorAll('.emoji-opt').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+function syncEmojiPicker(){
+  const val = document.getElementById('f-emoji').value.trim();
+  document.querySelectorAll('.emoji-opt').forEach(b => {
+    b.classList.toggle('selected', b.textContent === val);
+  });
+}
 function closeModal(){ document.getElementById('modal-overlay').classList.remove('open'); document.body.style.overflow=''; }
 function handleOverlayClick(e){ if(e.target===document.getElementById('modal-overlay')) closeModal(); }
 function selProj(p){ mSelProj=p; document.getElementById('mstrip').className=`mstrip ${p}`; document.querySelectorAll('.psel-btn').forEach(b=>{ b.className='psel-btn'+(b.dataset.proj===p?` sel-${p}`:''); }); }
@@ -1144,6 +1240,9 @@ function generateJSON(){
 function copyLogJSON(){ navigator.clipboard.writeText(document.getElementById('jp').textContent).then(()=>{ const b=document.getElementById('copy-btn-m'); b.textContent='✓ Copied!'; b.classList.add('copied'); setTimeout(()=>{ b.textContent='Copy to clipboard'; b.classList.remove('copied'); },2000); }); }
 
 document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
+document.addEventListener('change', e => {
+  if(e.target && e.target.id === 'f-date') updateDateDisplay(e.target.value);
+});
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.querySelector('.menu-toggle'), nav = document.querySelector('nav');
   if(btn && nav) btn.addEventListener('click', () => {
