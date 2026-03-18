@@ -5,107 +5,94 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STUDIORUM60S — Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- ═══ FIREBASE REST (no SDK, works on file:// and any server) ═══ -->
 <script>
-// ── Firestore REST API — no SDK needed, works on file:// and any server ──
 (function(){
   const PROJECT  = 'studiorum60s';
   const API_KEY  = 'AIzaSyBXNBmafxTtxw-OLMWJ9yp6if6JBYy9vGU';
-  const BASE     = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
-  const DOC_PATH = `${BASE}/studiorum60s/ticks`;
+  const BASE     = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents';
+  const DOC_PATH = BASE + '/studiorum60s/ticks';
 
-  // ── helpers: Firestore value encoding/decoding ──────────
   function encodeValue(v){
-    if(v === null)            return { nullValue: null };
-    if(typeof v === 'boolean') return { booleanValue: v };
-    if(typeof v === 'number')  return { integerValue: String(v) };
-    if(typeof v === 'string')  return { stringValue: v };
+    if(v === null) return {nullValue:null};
+    if(typeof v === 'boolean') return {booleanValue:v};
+    if(typeof v === 'number')  return {integerValue:String(v)};
+    if(typeof v === 'string')  return {stringValue:v};
     if(typeof v === 'object' && !Array.isArray(v)){
-      const fields = {};
-      for(const k in v) fields[k] = encodeValue(v[k]);
-      return { mapValue: { fields } };
+      var fields={};
+      for(var k in v) fields[k]=encodeValue(v[k]);
+      return {mapValue:{fields:fields}};
     }
-    return { stringValue: String(v) };
+    return {stringValue:String(v)};
   }
-
   function decodeValue(v){
     if(!v) return null;
-    if('booleanValue'  in v) return v.booleanValue;
-    if('integerValue'  in v) return parseInt(v.integerValue);
-    if('doubleValue'   in v) return v.doubleValue;
-    if('stringValue'   in v) return v.stringValue;
-    if('nullValue'     in v) return null;
-    if('mapValue'      in v){
-      const out = {};
-      const fields = v.mapValue.fields || {};
-      for(const k in fields) out[k] = decodeValue(fields[k]);
+    if('booleanValue' in v) return v.booleanValue;
+    if('integerValue' in v) return parseInt(v.integerValue);
+    if('doubleValue'  in v) return v.doubleValue;
+    if('stringValue'  in v) return v.stringValue;
+    if('nullValue'    in v) return null;
+    if('mapValue'     in v){
+      var out={}, fields=v.mapValue.fields||{};
+      for(var k in fields) out[k]=decodeValue(fields[k]);
       return out;
     }
     return null;
   }
-
   function decodeDoc(doc){
-    if(!doc || !doc.fields) return { geo:{}, cn:{}, fs:{} };
-    const out = {};
-    for(const k in doc.fields) out[k] = decodeValue(doc.fields[k]);
+    if(!doc||!doc.fields) return {geo:{},cn:{},fs:{}};
+    var out={};
+    for(var k in doc.fields) out[k]=decodeValue(doc.fields[k]);
     return out;
   }
 
-  function encodeDoc(data){
-    const fields = {};
-    for(const k in data) fields[k] = encodeValue(data[k]);
-    return { fields };
-  }
-
-  // ── loadTicks: GET document ─────────────────────────────
   async function loadTicks(){
-    try {
-      const r = await fetch(`${DOC_PATH}?key=${API_KEY}`);
-      if(r.status === 404) return { geo:{}, cn:{}, fs:{} };
+    try{
+      var r=await fetch(DOC_PATH+'?key='+API_KEY);
+      if(r.status===404) return {geo:{},cn:{},fs:{}};
       if(!r.ok) throw new Error(r.status);
-      const doc = await r.json();
-      return decodeDoc(doc);
-    } catch(e){ console.warn('loadTicks error:', e); return { geo:{}, cn:{}, fs:{} }; }
+      return decodeDoc(await r.json());
+    }catch(e){ console.warn('loadTicks:',e); return {geo:{},cn:{},fs:{}}; }
   }
 
-  // ── saveTick: PATCH with updateMask so we only touch one field ──
   async function saveTick(proj, taskId, val){
-    try {
-      // Build the full current proj map then patch it
-      const current = await loadTicks();
-      if(!current[proj]) current[proj] = {};
-      current[proj][taskId] = val;
-
-      const body = encodeDoc({ [proj]: current[proj] });
-      const mask = `updateMask.fieldPaths=${encodeURIComponent(proj)}`;
-      await fetch(`${DOC_PATH}?${mask}&key=${API_KEY}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
+    try{
+      var current=await loadTicks();
+      if(!current[proj]) current[proj]={};
+      current[proj][taskId]=val;
+      var body={fields:{}};
+      body.fields[proj]=encodeValue(current[proj]);
+      var mask='updateMask.fieldPaths='+encodeURIComponent(proj);
+      await fetch(DOC_PATH+'?'+mask+'&key='+API_KEY,{
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body)
       });
-    } catch(e){ console.warn('saveTick error:', e); }
+    }catch(e){ console.warn('saveTick:',e); }
   }
 
-  // ── onSnapshot: poll every 4 seconds (REST has no WebSocket) ──
-  let _lastData = null;
+  var _lastData=null;
   function onSnapshot(cb){
     async function poll(){
-      try {
-        const r = await fetch(`${DOC_PATH}?key=${API_KEY}`);
-        if(r.status === 404){ cb({ geo:{}, cn:{}, fs:{} }); return; }
-        const doc  = await r.json();
-        const data = JSON.stringify(doc.fields || {});
-        if(data !== _lastData){ _lastData = data; cb(decodeDoc(doc)); }
-      } catch(e){ console.warn('poll error:', e); }
+      try{
+        var r=await fetch(DOC_PATH+'?key='+API_KEY);
+        if(r.status===404){ cb({geo:{},cn:{},fs:{}}); return; }
+        var doc=await r.json();
+        var data=JSON.stringify(doc.fields||{});
+        if(data!==_lastData){ _lastData=data; cb(decodeDoc(doc)); }
+      }catch(e){ console.warn('poll:',e); }
     }
     poll();
-    setInterval(poll, 4000);
+    setInterval(poll,4000);
   }
 
-  window._fb = { loadTicks, saveTick, onSnapshot };
+  window._fb={loadTicks:loadTicks, saveTick:saveTick, onSnapshot:onSnapshot};
 })();
 </script>
+
 <style>
-:root {
+:root{
   --pink:#f7b8c4; --pink-deep:#f090a4; --pink-pale:#fde8ed; --pink-wash:#fff0f3;
   --green:#a8d5b5; --green-deep:#6dbf88; --green-pale:#d6f0de; --green-wash:#f0faf3;
   --white:#fffefb; --cream:#fdfaf5; --ink:#2d2d2d; --ink-soft:#4a4a4a; --ink-faint:rgba(45,45,45,.13);
@@ -139,7 +126,7 @@ nav ul li a.fs{background:var(--wash-blue)}
 nav ul li a:hover{transform:translate(-1px,-2px);box-shadow:var(--sh-md)}
 
 /* HERO */
-.hero{position:relative;z-index:1;padding:66px 52px 58px;text-align:center;overflow:hidden}
+.hero{position:relative;z-index:1;padding:66px 52px 58px;text-align:center}
 .hero-badge{display:inline-flex;align-items:center;gap:7px;background:var(--wash-yellow);border:var(--b);border-radius:50px;padding:6px 20px;font-weight:700;font-size:.82rem;box-shadow:var(--sh-sm);margin-bottom:22px;letter-spacing:.04em}
 .hero h2{font-family:'Baloo 2',cursive;font-size:3.2rem;font-weight:800;line-height:1.12;margin-bottom:10px}
 .hero h2 .w-pink{color:var(--pink-deep)}
@@ -154,10 +141,7 @@ nav ul li a:hover{transform:translate(-1px,-2px);box-shadow:var(--sh-md)}
 .stat-item{flex:1;padding:15px 18px;border-right:var(--bs);display:flex;flex-direction:column;align-items:center;gap:3px}
 .stat-item:last-child{border-right:none}
 .stat-num{font-family:'Baloo 2',cursive;font-size:1.9rem;font-weight:800;line-height:1}
-.stat-num.pink{color:var(--pink-deep)}
-.stat-num.green{color:var(--green-deep)}
-.stat-num.blue{color:#5ba3d4}
-.stat-num.ink{color:var(--ink)}
+.stat-num.pink{color:var(--pink-deep)} .stat-num.green{color:var(--green-deep)} .stat-num.blue{color:#5ba3d4} .stat-num.ink{color:var(--ink)}
 .stat-label{font-size:.73rem;font-weight:700;color:#aaa;letter-spacing:.06em;text-transform:uppercase;text-align:center}
 
 /* MAIN */
@@ -167,10 +151,7 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 .section-header{display:flex;align-items:center;gap:12px;margin-bottom:22px;margin-top:52px}
 .section-header:first-child{margin-top:0}
 .section-title{display:inline-flex;align-items:center;gap:8px;font-family:'Baloo 2',cursive;font-weight:700;font-size:1.08rem;border:var(--b);border-radius:50px;padding:7px 22px;box-shadow:var(--sh-sm);white-space:nowrap}
-.section-title.pink{background:var(--pink-pale)}
-.section-title.green{background:var(--green-pale)}
-.section-title.yellow{background:var(--wash-yellow)}
-.section-title.blue{background:var(--wash-blue)}
+.section-title.pink{background:var(--pink-pale)} .section-title.green{background:var(--green-pale)} .section-title.yellow{background:var(--wash-yellow)} .section-title.blue{background:var(--wash-blue)}
 .section-divider{flex:1;height:1.5px;background:linear-gradient(to right,var(--ink-faint),transparent);border-radius:2px}
 
 /* PROJECT CARDS */
@@ -182,56 +163,50 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 .fs  .card-strip{background:linear-gradient(to right,var(--wash-blue),#b6d9f8,var(--wash-blue))}
 .card-header{padding:18px 22px 14px;border-bottom:var(--bs);display:flex;align-items:flex-start;gap:13px}
 .card-icon{width:48px;height:48px;border-radius:14px;border:var(--b);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.45rem;box-shadow:var(--sh-sm)}
-.geo .card-icon{background:var(--green-pale)}
-.cn  .card-icon{background:var(--pink-pale)}
-.fs  .card-icon{background:var(--wash-blue)}
+.geo .card-icon{background:var(--green-pale)} .cn .card-icon{background:var(--pink-pale)} .fs .card-icon{background:var(--wash-blue)}
 .card-meta{flex:1}
 .card-meta h3{font-family:'Baloo 2',cursive;font-size:1.05rem;font-weight:800;margin-bottom:4px}
 .card-tag{display:inline-block;font-size:.71rem;font-weight:700;border:var(--b);border-radius:50px;padding:2px 11px;letter-spacing:.04em}
-.geo .card-tag{background:var(--green-pale);color:#3a7a52}
-.cn  .card-tag{background:var(--pink-pale);color:#b5435e}
-.fs  .card-tag{background:var(--wash-blue);color:#3a65a0}
+.geo .card-tag{background:var(--green-pale);color:#3a7a52} .cn .card-tag{background:var(--pink-pale);color:#b5435e} .fs .card-tag{background:var(--wash-blue);color:#3a65a0}
 .card-desc-section{padding:14px 22px 0}
 .card-desc{font-size:.84rem;font-weight:600;color:#666;line-height:1.7;margin-bottom:12px}
 .pillars{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
 .pillar{display:flex;align-items:center;gap:8px;padding:7px 13px;border:var(--b);border-radius:50px;font-weight:700;font-size:.82rem}
-.geo .pillar{background:var(--green-wash)}
-.cn  .pillar{background:var(--pink-wash)}
-.fs  .pillar{background:#f0f7ff}
+.geo .pillar{background:var(--green-wash)} .cn .pillar{background:var(--pink-wash)} .fs .pillar{background:#f0f7ff}
 .pillar-num{font-family:'Baloo 2',cursive;font-size:.7rem;font-weight:800;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:var(--b);flex-shrink:0}
-.geo .pillar-num{background:var(--green)}
-.cn  .pillar-num{background:var(--pink)}
-.fs  .pillar-num{background:#c2d9ff}
-
-/* task divider */
+.geo .pillar-num{background:var(--green)} .cn .pillar-num{background:var(--pink)} .fs .pillar-num{background:#c2d9ff}
 .task-divider{display:flex;align-items:center;gap:8px;padding:0 22px;margin-bottom:10px}
 .task-divider-line{flex:1;height:1px;background:var(--ink-faint)}
 .task-divider-label{font-family:'Baloo 2',cursive;font-size:.72rem;font-weight:800;color:#bbb;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
-
-/* ── CARD TASK LIST — display + tick only (tick state from Firebase) ── */
 .task-section{padding:0 22px 14px;flex:1}
 .task-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
 .task-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:12px;border:1.5px solid transparent;transition:border-color .12s,background .12s;cursor:pointer;user-select:none}
 .task-item:hover{border-color:rgba(45,45,45,.12)}
-.geo .task-item:hover{background:var(--green-wash)}
-.cn  .task-item:hover{background:var(--pink-wash)}
-.fs  .task-item:hover{background:#f0f7ff}
+.geo .task-item:hover{background:var(--green-wash)} .cn .task-item:hover{background:var(--pink-wash)} .fs .task-item:hover{background:#f0f7ff}
 .task-check{width:20px;height:20px;border-radius:6px;border:var(--b);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;background:var(--white);transition:background .15s,border-color .15s;pointer-events:none}
-.task-check.done{color:#fff}
 .geo .task-check.done{background:var(--green-deep);border-color:var(--green-deep)}
 .cn  .task-check.done{background:var(--pink-deep);border-color:var(--pink-deep)}
 .fs  .task-check.done{background:#5ba3d4;border-color:#5ba3d4}
 .task-text{flex:1;font-size:.83rem;font-weight:600;line-height:1.35;color:var(--ink);padding:1px 4px;transition:color .18s}
 .task-text.done{text-decoration:line-through;color:#ccc}
-.task-item.saving{opacity:.55;pointer-events:none}
-/* small hint pointing to builder */
 .card-task-hint{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;border:1.5px dashed rgba(45,45,45,.14);margin-top:4px;cursor:pointer;transition:border-color .12s,background .12s;text-decoration:none}
 .card-task-hint:hover{border-color:rgba(45,45,45,.32);background:rgba(45,45,45,.03)}
 .card-task-hint span{font-size:.76rem;font-weight:700;color:#bbb}
 .card-task-hint .hint-arrow{font-size:.7rem;color:#ccc;margin-left:auto;transition:transform .12s}
 .card-task-hint:hover .hint-arrow{transform:translateX(3px)}
+.progress-row{padding:0 22px 20px;display:flex;flex-direction:column;gap:5px}
+.progress-meta{display:flex;justify-content:space-between;align-items:baseline}
+.progress-label{font-size:.74rem;font-weight:700;color:#aaa}
+.progress-pct{font-family:'Baloo 2',cursive;font-size:1.1rem;font-weight:800}
+.geo .progress-pct{color:var(--green-deep)} .cn .progress-pct{color:var(--pink-deep)} .fs .progress-pct{color:#5ba3d4}
+.progress-track{height:9px;background:rgba(45,45,45,.05);border:var(--b);border-radius:50px;overflow:hidden}
+.progress-fill{height:100%;border-radius:50px;width:0;transition:width .6s cubic-bezier(.2,.8,.3,1)}
+.geo .progress-fill{background:linear-gradient(to right,var(--green),var(--green-deep))}
+.cn  .progress-fill{background:linear-gradient(to right,var(--pink),var(--pink-deep))}
+.fs  .progress-fill{background:linear-gradient(to right,#9ec9f5,#5ba3d4)}
+.progress-fraction{font-size:.71rem;color:#bbb;font-weight:700;text-align:right;margin-top:2px}
 
-/* ── TASK BUILDER TOOL (inline panel) ── */
+/* TASK BUILDER */
 .tool-panel{background:var(--white);border:var(--bt);border-radius:24px;box-shadow:var(--sh-md);overflow:hidden;margin-bottom:52px}
 .tool-panel-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px 14px;border-bottom:var(--bs);flex-wrap:wrap;gap:10px}
 .tool-panel-title{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.05rem}
@@ -245,15 +220,11 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 .tool-body{display:grid;grid-template-columns:1fr 1fr;gap:0}
 .tool-left{padding:20px 24px;border-right:var(--bs)}
 .tool-right{padding:20px 24px}
-
-/* tool task list — full edit */
 .tool-task-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;min-height:80px}
 .tool-task-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;border:1px solid transparent;transition:border-color .12s,background .12s}
 .tool-task-row:hover{border-color:rgba(45,45,45,.12)}
-/* tool builder: no tick UI */
 .tool-task-inp{flex:1;border:none;background:transparent;outline:none;font-family:'Nunito',sans-serif;font-size:.83rem;font-weight:600;color:var(--ink);padding:1px 4px;border-radius:4px}
 .tool-task-inp:focus{background:rgba(45,45,45,.05)}
-.tool-task-inp.done{text-decoration:line-through;color:#ccc}
 .tool-del{width:20px;height:20px;border-radius:50%;border:none;background:none;color:#ddd;cursor:pointer;font-size:.8rem;flex-shrink:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s}
 .tool-task-row:hover .tool-del{opacity:1}
 .tool-del:hover{color:var(--ink);background:rgba(45,45,45,.08)}
@@ -262,8 +233,6 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 .tool-add-row:focus-within{border-color:var(--ink)}
 .tool-add-inp{flex:1;border:none;background:transparent;outline:none;font-family:'Nunito',sans-serif;font-size:.83rem;font-weight:600;color:var(--ink)}
 .tool-add-inp::placeholder{color:#ccc}
-
-/* progress inside tool */
 .tool-prog-row{display:flex;align-items:center;gap:10px;margin-bottom:16px}
 .tool-prog-track{flex:1;height:8px;background:rgba(45,45,45,.06);border:var(--b);border-radius:50px;overflow:hidden}
 .tool-prog-fill{height:100%;border-radius:50px;transition:width .5s cubic-bezier(.2,.8,.3,1)}
@@ -271,23 +240,16 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 .tool-prog-fill.cn{background:linear-gradient(to right,var(--pink),var(--pink-deep))}
 .tool-prog-fill.fs{background:linear-gradient(to right,#9ec9f5,#5ba3d4)}
 .tool-prog-pct{font-family:'Baloo 2',cursive;font-size:1rem;font-weight:800;min-width:38px;text-align:right}
-.tool-prog-pct.geo{color:var(--green-deep)}
-.tool-prog-pct.cn{color:var(--pink-deep)}
-.tool-prog-pct.fs{color:#5ba3d4}
+.tool-prog-pct.geo{color:var(--green-deep)} .tool-prog-pct.cn{color:var(--pink-deep)} .tool-prog-pct.fs{color:#5ba3d4}
 .tool-frac{font-size:.74rem;font-weight:700;color:#bbb;text-align:right;margin-top:-10px;margin-bottom:14px}
-
-/* action buttons in tool */
 .tool-actions{display:flex;gap:8px;flex-wrap:wrap}
 .tool-btn{font-family:'Baloo 2',cursive;font-size:.8rem;font-weight:700;border:var(--b);border-radius:50px;padding:6px 16px;cursor:pointer;box-shadow:var(--sh-sm);transition:transform .1s,box-shadow .1s;background:var(--white);color:var(--ink)}
 .tool-btn:hover{transform:translate(-1px,-2px);box-shadow:var(--sh-md)}
-.tool-btn.export-single{background:var(--pink-pale)}
 .tool-btn.export-all{background:var(--green-pale)}
 .tool-btn.copy-btn{background:var(--wash-yellow)}
 .tool-btn.copied{background:var(--green-pale)}
 .tool-btn.reset-btn{background:none;color:#ccc;box-shadow:none;border-color:rgba(45,45,45,.15)}
 .tool-btn.reset-btn:hover{color:var(--ink);border-color:var(--ink)}
-
-/* JSON output side */
 .json-area-label{font-family:'Baloo 2',cursive;font-size:.75rem;font-weight:800;color:#bbb;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px}
 .json-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:200px;gap:8px;opacity:.4}
 .json-placeholder .jp-icon{font-size:2rem}
@@ -297,21 +259,6 @@ main{flex:1;position:relative;z-index:1;padding:52px 56px 100px;max-width:1340px
 pre.json-out{background:var(--cream);border:var(--b);border-radius:14px;padding:14px;font-family:'Courier New',monospace;font-size:.73rem;line-height:1.65;overflow-x:auto;color:var(--ink);max-height:280px;overflow-y:auto;white-space:pre}
 .json-hint{margin-top:10px;font-size:.76rem;font-weight:600;color:#aaa;line-height:1.6}
 .json-hint code{background:var(--green-pale);padding:1px 6px;border-radius:4px;font-size:.71rem;color:#3a7a52}
-
-/* PROGRESS on card */
-.progress-row{padding:0 22px 20px;display:flex;flex-direction:column;gap:5px}
-.progress-meta{display:flex;justify-content:space-between;align-items:baseline}
-.progress-label{font-size:.74rem;font-weight:700;color:#aaa}
-.progress-pct{font-family:'Baloo 2',cursive;font-size:1.1rem;font-weight:800}
-.geo .progress-pct{color:var(--green-deep)}
-.cn  .progress-pct{color:var(--pink-deep)}
-.fs  .progress-pct{color:#5ba3d4}
-.progress-track{height:9px;background:rgba(45,45,45,.05);border:var(--b);border-radius:50px;overflow:hidden}
-.progress-fill{height:100%;border-radius:50px;width:0;transition:width .6s cubic-bezier(.2,.8,.3,1)}
-.geo .progress-fill{background:linear-gradient(to right,var(--green),var(--green-deep))}
-.cn  .progress-fill{background:linear-gradient(to right,var(--pink),var(--pink-deep))}
-.fs  .progress-fill{background:linear-gradient(to right,#9ec9f5,#5ba3d4)}
-.progress-fraction{font-size:.71rem;color:#bbb;font-weight:700;text-align:right;margin-top:2px}
 
 /* HEATMAP */
 .heatmap-wrap{background:rgba(255,254,251,.8);border:var(--b);border-radius:22px;box-shadow:var(--sh-md);padding:24px 26px;backdrop-filter:blur(6px)}
@@ -336,10 +283,7 @@ pre.json-out{background:var(--cream);border:var(--b);border-radius:14px;padding:
 .day-btn,.proj-btn{font-family:'Baloo 2',cursive;font-size:.82rem;font-weight:700;background:var(--white);border:var(--b);border-radius:50px;padding:5px 15px;cursor:pointer;box-shadow:var(--sh-sm);transition:transform .1s,background .12s}
 .day-btn:hover,.proj-btn:hover{transform:translateY(-2px)}
 .day-btn.active{background:var(--pink);box-shadow:var(--sh-md)}
-.proj-btn.active-all{background:var(--wash-yellow)}
-.proj-btn.active-geo{background:var(--green)}
-.proj-btn.active-cn{background:var(--pink)}
-.proj-btn.active-fs{background:var(--wash-blue)}
+.proj-btn.active-all{background:var(--wash-yellow)} .proj-btn.active-geo{background:var(--green)} .proj-btn.active-cn{background:var(--pink)} .proj-btn.active-fs{background:var(--wash-blue)}
 .log-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(272px,1fr));gap:18px}
 .log-card{background:var(--white);border:var(--b);border-radius:20px;overflow:hidden;box-shadow:var(--sh-sm);transition:transform .15s,box-shadow .15s;opacity:0;animation:fadeUp .38s ease forwards}
 .log-card:hover{transform:translateY(-4px);box-shadow:var(--sh-lg)}
@@ -360,9 +304,7 @@ pre.json-out{background:var(--cream);border:var(--b);border-radius:14px;padding:
 .log-tag.geo{background:var(--green-pale)} .log-tag.cn{background:var(--pink-pale)} .log-tag.fs{background:var(--wash-blue)}
 .log-tag.status-done{background:#dcfce7} .log-tag.status-doing{background:var(--wash-yellow)} .log-tag.status-todo{background:#f5f5f5;color:#bbb}
 .sdot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-top:5px;flex-shrink:0;border:1px solid rgba(0,0,0,.12)}
-.sdot.done{background:#4ade80}
-.sdot.doing{background:#fbbf24;animation:blink 1.3s ease-in-out infinite}
-.sdot.todo{background:#e5e7eb}
+.sdot.done{background:#4ade80} .sdot.doing{background:#fbbf24;animation:blink 1.3s ease-in-out infinite} .sdot.todo{background:#e5e7eb}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 .sk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(272px,1fr));gap:18px}
 .sk-card{background:var(--white);border:var(--b);border-radius:20px;overflow:hidden;animation:shimmer 1.5s ease-in-out infinite}
@@ -375,7 +317,28 @@ pre.json-out{background:var(--cream);border:var(--b);border-radius:14px;padding:
 .empty-state .ei{font-size:2.4rem;margin-bottom:9px}
 .empty-state p{font-size:.88rem;color:#bbb;font-weight:600}
 
-/* LOG MODAL */
+/* EMOJI PICKER */
+.emoji-field{position:relative}
+.emoji-trigger{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--cream);border:var(--b);border-radius:12px;cursor:pointer;transition:border-color .15s,box-shadow .15s;user-select:none}
+.emoji-trigger:hover{border-color:var(--ink)}
+.emoji-trigger.open{border-color:var(--pink-deep);box-shadow:0 0 0 3px rgba(240,144,164,.15)}
+.emoji-preview{font-size:1.5rem;width:32px;text-align:center;line-height:1}
+.emoji-trigger-label{flex:1;font-size:.84rem;font-weight:600;color:#aaa}
+.emoji-trigger-label.picked{color:var(--ink)}
+.emoji-caret{font-size:.65rem;color:#bbb;transition:transform .2s}
+.emoji-trigger.open .emoji-caret{transform:rotate(180deg)}
+.emoji-dropdown{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--white);border:var(--bt);border-radius:18px;box-shadow:var(--sh-lg);z-index:300;overflow:hidden;display:none;flex-direction:column}
+.emoji-dropdown.open{display:flex}
+.emoji-cats{display:flex;gap:4px;padding:10px 12px 8px;border-bottom:var(--bs);flex-wrap:wrap}
+.emoji-cat-btn{font-family:'Baloo 2',cursive;font-size:.72rem;font-weight:700;border:var(--b);border-radius:50px;padding:3px 11px;cursor:pointer;background:var(--white);transition:background .1s,transform .1s;color:var(--ink)}
+.emoji-cat-btn:hover{transform:translateY(-1px)}
+.emoji-cat-btn.active{background:var(--pink-pale);border-color:var(--pink-deep)}
+.emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:10px 12px 12px;max-height:180px;overflow-y:auto}
+.emoji-opt{width:100%;aspect-ratio:1;border-radius:9px;border:1.5px solid transparent;background:transparent;cursor:pointer;font-size:1.2rem;display:flex;align-items:center;justify-content:center;transition:border-color .1s,background .1s,transform .1s}
+.emoji-opt:hover{border-color:rgba(45,45,45,.18);background:var(--cream);transform:scale(1.18)}
+.emoji-opt.selected{border-color:var(--ink);background:var(--pink-pale);box-shadow:var(--sh-sm)}
+
+/* MODAL */
 .modal-overlay{position:fixed;inset:0;z-index:200;background:rgba(45,45,45,.35);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .22s;padding:20px}
 .modal-overlay.open{opacity:1;pointer-events:all}
 .modal{background:var(--white);border:var(--bt);border-radius:26px;box-shadow:var(--sh-lg);width:100%;max-width:520px;max-height:90vh;overflow-y:auto;transform:translateY(20px) scale(.97);transition:transform .22s}
@@ -392,11 +355,15 @@ pre.json-out{background:var(--cream);border:var(--b);border-radius:14px;padding:
 .mbody{padding:20px 24px 24px;display:flex;flex-direction:column;gap:16px}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .fg{display:flex;flex-direction:column;gap:6px}
-.fg.full{grid-column:1/-1}
 label.flabel{font-size:.8rem;font-weight:800;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase;font-family:'Baloo 2',cursive}
 input[type=text],input[type=date],textarea{font-family:'Nunito',sans-serif;font-size:.88rem;font-weight:600;background:var(--cream);border:var(--b);border-radius:12px;padding:9px 13px;color:var(--ink);width:100%;transition:border-color .15s,box-shadow .15s;outline:none;resize:none}
 input:focus,textarea:focus{border-color:var(--pink-deep);box-shadow:0 0 0 3px rgba(240,144,164,.15)}
 textarea{min-height:88px}
+.date-auto-row{display:flex;gap:8px;align-items:center}
+.date-auto-row input{flex:1}
+.date-today-btn{font-family:'Baloo 2',cursive;font-size:.78rem;font-weight:700;background:var(--wash-yellow);border:var(--b);border-radius:50px;padding:5px 14px;cursor:pointer;white-space:nowrap;box-shadow:var(--sh-sm);transition:transform .1s}
+.date-today-btn:hover{transform:translateY(-1px)}
+.date-display{font-size:.76rem;color:#aaa;font-weight:600}
 .psel-row{display:flex;gap:8px}
 .psel-btn{flex:1;padding:9px 8px;border:var(--b);border-radius:12px;font-family:'Baloo 2',cursive;font-weight:700;font-size:.82rem;cursor:pointer;transition:all .12s;text-align:center;background:var(--white)}
 .psel-btn:hover{transform:translateY(-1px)}
@@ -429,68 +396,29 @@ footer p{font-size:.85rem;font-weight:500;margin-bottom:3px}
 footer .sub-brands{margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 footer .sub-brands a{text-decoration:none;color:var(--ink);font-weight:700;font-size:.83rem;border:var(--b);border-radius:50px;padding:5px 16px;box-shadow:var(--sh-sm);transition:transform .12s;font-family:'Baloo 2',cursive}
 footer .sub-brands a:hover{transform:translateY(-2px)}
-footer .sub-brands a.geo{background:var(--green)}
-footer .sub-brands a.cn{background:var(--pink)}
-footer .sub-brands a.fs{background:var(--wash-blue)}
+footer .sub-brands a.geo{background:var(--green)} footer .sub-brands a.cn{background:var(--pink)} footer .sub-brands a.fs{background:var(--wash-blue)}
 
 /* RESPONSIVE */
 @media(max-width:1100px){.projects-grid{grid-template-columns:1fr 1fr}.tool-body{grid-template-columns:1fr}}
 @media(max-width:760px){
   .projects-grid{grid-template-columns:1fr}
-  header{padding:0 18px}
-  main{padding:28px 18px 80px}
-  .hero{padding:40px 20px 44px}
-  .hero h2{font-size:2.1rem}
-  .stats-bar{flex-wrap:wrap}
-  .stat-item{min-width:50%;border-bottom:var(--bs)}
-  .tool-body{grid-template-columns:1fr}
-  .tool-left{border-right:none;border-bottom:var(--bs)}
+  header{padding:0 18px} main{padding:28px 18px 80px}
+  .hero{padding:40px 20px 44px} .hero h2{font-size:2.1rem}
+  .stats-bar{flex-wrap:wrap} .stat-item{min-width:50%;border-bottom:var(--bs)}
+  .tool-body{grid-template-columns:1fr} .tool-left{border-right:none;border-bottom:var(--bs)}
   .form-row{grid-template-columns:1fr}
 }
 @media(max-width:600px){
-  .hero h2{font-size:1.65rem}
-  .log-grid,.sk-grid{grid-template-columns:1fr}
+  .hero h2{font-size:1.65rem} .log-grid,.sk-grid{grid-template-columns:1fr}
   .menu-toggle{display:block}
   nav{display:none;position:absolute;top:64px;left:0;right:0;background:rgba(253,250,245,.97);border-bottom:var(--b);padding:10px 0;z-index:99;flex-direction:column;align-items:center}
-  nav.show{display:flex}
-  nav ul{flex-direction:column;align-items:center}
+  nav.show{display:flex} nav ul{flex-direction:column;align-items:center}
 }
-
-/* DATE AUTO ROW */
-.date-auto-row{display:flex;gap:8px;align-items:center}
-.date-auto-row input{flex:1}
-.date-today-btn{font-family:'Baloo 2',cursive;font-size:.78rem;font-weight:800;background:var(--wash-yellow);border:var(--b);border-radius:50px;padding:5px 14px;cursor:pointer;white-space:nowrap;box-shadow:var(--sh-sm);transition:transform .1s}
-.date-today-btn:hover{transform:translateY(-1px)}
-.date-display{font-family:'Baloo 2',cursive;font-size:.82rem;font-weight:700;color:var(--green-deep);margin-top:5px;min-height:1.2em;letter-spacing:.02em}
-
-/* EMOJI PICKER DROPDOWN */
-.emoji-field{position:relative}
-.emoji-trigger{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--cream);border:var(--b);border-radius:12px;cursor:pointer;transition:border-color .15s,box-shadow .15s;user-select:none}
-.emoji-trigger:hover{border-color:var(--ink)}
-.emoji-trigger.open{border-color:var(--pink-deep);box-shadow:0 0 0 3px rgba(240,144,164,.15)}
-.emoji-preview{font-size:1.5rem;width:32px;text-align:center;line-height:1}
-.emoji-trigger-label{flex:1;font-size:.84rem;font-weight:600;color:#aaa}
-.emoji-trigger-label.picked{color:var(--ink)}
-.emoji-caret{font-size:.65rem;color:#bbb;transition:transform .2s}
-.emoji-trigger.open .emoji-caret{transform:rotate(180deg)}
-.emoji-dropdown{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--white);border:var(--bt);border-radius:18px;box-shadow:var(--sh-lg);z-index:300;overflow:hidden;display:none;flex-direction:column}
-.emoji-dropdown.open{display:flex}
-.emoji-cats{display:flex;gap:4px;padding:10px 12px 8px;border-bottom:var(--bs);flex-wrap:wrap}
-.emoji-cat-btn{font-family:'Baloo 2',cursive;font-size:.72rem;font-weight:700;border:var(--b);border-radius:50px;padding:3px 11px;cursor:pointer;background:var(--white);transition:background .1s,transform .1s;color:var(--ink)}
-.emoji-cat-btn:hover{transform:translateY(-1px)}
-.emoji-cat-btn.active{background:var(--pink-pale);border-color:var(--pink-deep)}
-.emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:10px 12px 12px;max-height:180px;overflow-y:auto}
-.emoji-opt{width:100%;aspect-ratio:1;border-radius:9px;border:1.5px solid transparent;background:transparent;cursor:pointer;font-size:1.2rem;display:flex;align-items:center;justify-content:center;transition:border-color .1s,background .1s,transform .1s}
-.emoji-opt:hover{border-color:rgba(45,45,45,.18);background:var(--cream);transform:scale(1.18)}
-.emoji-opt.selected{border-color:var(--ink);background:var(--pink-pale);box-shadow:var(--sh-sm)}
 </style>
 </head>
 <body>
 
-<div class="blob blob-1"></div>
-<div class="blob blob-2"></div>
-<div class="blob blob-3"></div>
-<div class="blob blob-4"></div>
+<div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div><div class="blob blob-4"></div>
 
 <header>
   <div class="header-brand">
@@ -522,36 +450,25 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
 </div>
 
 <main>
-
-  <!-- THREE PROJECTS -->
   <div class="section-header">
     <div class="section-title pink">🗂 The Three Projects</div>
     <div class="section-divider"></div>
   </div>
   <div class="projects-grid" id="projects-grid"></div>
 
-  <!-- TASK BUILDER TOOL -->
   <div class="section-header" id="task-builder-section">
     <div class="section-title blue">🛠 Task Builder</div>
     <div class="section-divider"></div>
   </div>
-
   <div class="tool-panel">
     <div class="tool-panel-header">
       <div>
         <div class="tool-panel-title">Weekly task planner</div>
-        <div class="tool-panel-sub">Create &amp; edit tasks here → tick off progress → export full JSON to replace your file</div>
+        <div class="tool-panel-sub">Create &amp; edit tasks here → export JSON to update your file → tick off on the cards above</div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:7px">
-          <label style="font-family:'Baloo 2',cursive;font-size:.75rem;font-weight:800;color:#bbb;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap">Week</label>
-          <input type="text" id="tool-week-inp" placeholder="17–23 Mar 2025" style="font-family:'Nunito',sans-serif;font-size:.82rem;font-weight:700;background:var(--wash-yellow);border:var(--b);border-radius:50px;padding:5px 14px;color:var(--ink);outline:none;width:170px;transition:border-color .15s,box-shadow .15s">
-        </div>
-        <div class="tool-tabs" id="tool-tabs"></div>
-      </div>
+      <div class="tool-tabs" id="tool-tabs"></div>
     </div>
     <div class="tool-body">
-      <!-- LEFT: task editor (full CRUD) -->
       <div class="tool-left">
         <div id="tool-task-list" class="tool-task-list"></div>
         <div class="tool-add-row">
@@ -559,34 +476,30 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
           <input class="tool-add-inp" id="tool-add-inp" placeholder="Add a task and press Enter…">
         </div>
         <div class="tool-prog-row">
-          <div class="tool-prog-track">
-            <div class="tool-prog-fill" id="tool-prog-fill"></div>
-          </div>
+          <div class="tool-prog-track"><div class="tool-prog-fill" id="tool-prog-fill"></div></div>
           <div class="tool-prog-pct" id="tool-prog-pct">0%</div>
         </div>
         <div class="tool-frac" id="tool-frac">0 of 0 tasks done</div>
         <div class="tool-actions">
-          <button class="tool-btn export-all" onclick="toolExportAll()">⬇ Export full JSON</button>
+          <button class="tool-btn export-all" onclick="toolExportAll()">Export JSON →</button>
           <button class="tool-btn copy-btn" id="tool-copy-btn" onclick="toolCopyJSON()">Copy JSON</button>
           <button class="tool-btn reset-btn" onclick="toolReset()">↺ Reset</button>
         </div>
       </div>
-      <!-- RIGHT: JSON output -->
       <div class="tool-right">
         <div class="json-area-label">JSON output</div>
         <div id="tool-json-placeholder" class="json-placeholder">
           <div class="jp-icon">📋</div>
-          <p>Click "Export this project" or "Export all three" to generate the JSON block to paste into your file.</p>
+          <p>Click "Export JSON" to generate the block to paste into your file.</p>
         </div>
         <div class="json-out-wrap" id="tool-json-wrap">
           <pre class="json-out" id="tool-json-out"></pre>
-          <p class="json-hint">This is the <strong>complete</strong> replacement for your <code style="background:var(--green-pale);padding:1px 6px;border-radius:4px;font-size:.71rem;color:#3a7a52">studiorum-log.json</code> — overwrite the whole file, then reload. The <code style="background:var(--wash-yellow);padding:1px 6px;border-radius:4px;font-size:.71rem">logs</code> array from your existing file will be preserved since it is not modified here.</p>
+          <p class="json-hint">Paste into the <code>projects</code> section of <code>studiorum-log.json</code>, then reload.</p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- HEATMAP -->
   <div class="section-header">
     <div class="section-title green">🌿 This Week's Activity</div>
     <div class="section-divider"></div>
@@ -604,14 +517,12 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
     </div>
   </div>
 
-  <!-- LOG -->
   <div class="section-header" style="margin-top:52px">
     <div class="section-title yellow">📋 Daily Progress Log</div>
     <div class="section-divider"></div>
   </div>
   <div class="filters-row" id="filters-row"></div>
   <div id="log-grid" class="log-grid"></div>
-
 </main>
 
 <button class="fixed-tag" onclick="openModal(event)">🌸 New log entry</button>
@@ -636,7 +547,7 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
       <div class="fg">
         <label class="flabel">Date</label>
         <div class="date-auto-row">
-          <input type="date" id="f-date">
+          <input type="date" id="f-date" onchange="updateDateDisplay(this.value)">
           <button type="button" class="date-today-btn" onclick="setToday()">Today</button>
         </div>
         <div class="date-display" id="date-display"></div>
@@ -694,7 +605,6 @@ footer .sub-brands a.fs{background:var(--wash-blue)}
 //  CONFIG
 // ═══════════════════════════════════════════════════════════
 const LOG_JSON = 'data/studiorum-log.json';
-
 const PROJ_NAME  = { geo:'Geolab Data', cn:'Chinese60s', fs:'Freesize English' };
 const PROJ_ICON  = { geo:'🧪', cn:'🀄', fs:'📖' };
 const PROJ_TAG   = { geo:'Research & Training', cn:'Product & Sales', fs:'Learning & Insight' };
@@ -702,37 +612,33 @@ const STATUS_LBL = { done:'Done', doing:'In progress', todo:'Not started' };
 const DAYS_ORDER = ['All','Wed','Tue','Mon','Sun'];
 const PROJS_ORD  = ['all','geo','cn','fs'];
 const PROJ_LBL   = { all:'All projects', geo:'🧪 Geolab', cn:'🀄 Chinese60s', fs:'📖 Freesize' };
-
-// ── AUTO WEEK LABEL ─────────────────────────────────────────
-function getCurrentWeekLabel(){
-  const now  = new Date();
-  const day  = now.getDay(); // 0=Sun
-  const diffToMon = (day === 0) ? -6 : 1 - day;
-  const mon  = new Date(now); mon.setDate(now.getDate() + diffToMon);
-  const sun  = new Date(mon); sun.setDate(mon.getDate() + 6);
-  const fmt  = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
-  const fmtY = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-  // If same month: "14–20 Jul 2025", else "28 Jul – 3 Aug 2025"
-  if(mon.getMonth() === sun.getMonth()){
-    return `${mon.getDate()}–${fmtY(sun)}`;
-  }
-  return `${fmt(mon)} – ${fmtY(sun)}`;
-}
-
-const PROJ_DESC = {
+const PROJ_DESC  = {
   geo:{ desc:'Run field experiments, observe how organisations operate, gather behavioural data — and train based on what the data reveals.', pillars:['Run experiments','Observe organisations','Collect data','Train & develop'] },
   cn: { desc:'Build practical Mandarin learning products, watch how users engage, collect feedback data — and optimise to convert and sell more effectively.', pillars:['Build products','Observe users','Collect data','Sell'] },
   fs: { desc:'Learn actively, track personal progress across phases, collect evidence of growth — and draw conclusions that can be applied and shared.', pillars:['Learn','Observe progress','Collect data','Draw conclusions'] },
 };
 
 // ═══════════════════════════════════════════════════════════
-//  STATE
-// taskState[key] = [ { id, title }, ... ]   — NO done field, source = JSON
-// ticks[key]     = { taskId: true/false }    — source = Firestore (realtime)
+//  EMOJI CATEGORIES (only single-codepoint, no variation selectors)
 // ═══════════════════════════════════════════════════════════
-let DATA       = null;
-let taskState  = { geo:[], cn:[], fs:[] };  // task definitions from JSON
-let ticks      = { geo:{}, cn:{}, fs:{} };  // tick state from Firebase
+const EMOJI_CATS = {
+  Science: ['🧪','🔬','🧬','🔭','📡','🧲','⚡','💊','🧯','💉','🔋','🧫'],
+  Data:    ['📊','📈','📉','📋','📁','📂','🔍','🔎','📌','📍','🗝','🔑'],
+  Writing: ['📝','📖','📚','📓','📔','📒','📃','📄','✏','🖊','📜','📰'],
+  Media:   ['🎧','🎤','📣','📸','📷','🎬','🎥','📺','📻','🎨','🎭','📽'],
+  Work:    ['💼','📦','🚀','🎯','🏆','💡','⚙','🔧','🔨','📐','📏','🛒'],
+  Nature:  ['🌱','🌿','🌸','🌊','🔥','⭐','✨','🌙','🌈','🍃','🌺','🌻'],
+  People:  ['👀','🤝','💬','💪','🧠','🙌','👋','🤔','💭','❤','👍','🤞'],
+  Status:  ['✅','⏳','🔄','📅','❌','⏰','😴','🆕','🔔','🚩','🎉','💯'],
+  Chinese: ['🀄','🎲','🧧','🏮','🎋','🎍','🎎','🏯','💿','🌏','🐉','🎮'],
+};
+
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+let DATA      = null;
+let taskState = { geo:[], cn:[], fs:[] };
+let ticks     = { geo:{}, cn:{}, fs:{} };
 let toolActive = 'geo';
 let toolLastJSON = '';
 let activeDay  = 'All';
@@ -740,313 +646,304 @@ let activeProj = 'all';
 let mSelProj   = null;
 let mSelStatus = 'done';
 let nextLogId  = 100;
+let activeCat  = 'Science';
 
 function uid(p){ return p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,5); }
 
 // ═══════════════════════════════════════════════════════════
-//  FIREBASE TICK SYNC
+//  AUTO WEEK LABEL
+// ═══════════════════════════════════════════════════════════
+function getCurrentWeekLabel(){
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMon = (day === 0) ? -6 : 1 - day;
+  const mon = new Date(now); mon.setDate(now.getDate() + diffToMon);
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  const fmt  = d => d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  const fmtY = d => d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  return mon.getMonth() === sun.getMonth()
+    ? mon.getDate() + '\u2013' + fmtY(sun)
+    : fmt(mon) + ' \u2013 ' + fmtY(sun);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FIREBASE
 // ═══════════════════════════════════════════════════════════
 function waitForFirebase(cb){
-  // Firebase module sets window._fb asynchronously; poll until ready
   if(window._fb){ cb(); return; }
-  const t = setInterval(()=>{ if(window._fb){ clearInterval(t); cb(); } }, 80);
+  var t = setInterval(function(){ if(window._fb){ clearInterval(t); cb(); } }, 80);
 }
 
 function startFirebaseListener(){
-  // window._fb.onSnapshot wraps TICKS_DOC.onSnapshot, callback receives plain data object
-  window._fb.onSnapshot(data => {
+  window._fb.onSnapshot(function(data){
     ticks.geo = data.geo || {};
     ticks.cn  = data.cn  || {};
     ticks.fs  = data.fs  || {};
-    ['geo','cn','fs'].forEach(k => {
-      renderCardTaskList(k);
-      refreshCardProgress(k);
-    });
+    ['geo','cn','fs'].forEach(function(k){ renderCardTaskList(k); refreshCardProgress(k); });
   });
 }
 
 // ═══════════════════════════════════════════════════════════
-//  PROGRESS HELPER (uses ticks, not taskState.done)
+//  PROGRESS
 // ═══════════════════════════════════════════════════════════
 function calcPct(key){
-  const tasks = taskState[key] || [];
-  if(!tasks.length) return { done:0, total:0, pct:0 };
-  const done = tasks.filter(t => ticks[key]?.[t.id]).length;
-  return { done, total:tasks.length, pct: Math.round(done/tasks.length*100) };
+  var tasks = taskState[key] || [];
+  if(!tasks.length) return {done:0,total:0,pct:0};
+  var done = tasks.filter(function(t){ return ticks[key] && ticks[key][t.id]; }).length;
+  return {done:done, total:tasks.length, pct:Math.round(done/tasks.length*100)};
 }
 
 // ═══════════════════════════════════════════════════════════
-//  PROJECT CARDS — display + tick only
+//  PROJECT CARDS
 // ═══════════════════════════════════════════════════════════
 function buildProjectCards(){
-  const grid = document.getElementById('projects-grid'); if(!grid) return;
+  var grid = document.getElementById('projects-grid'); if(!grid) return;
   grid.innerHTML = '';
-  ['geo','cn','fs'].forEach(key => {
-    const meta = PROJ_DESC[key];
-    const { done, total, pct } = calcPct(key);
-    const pillarHTML = meta.pillars.map((p,i) =>
-      `<div class="pillar"><div class="pillar-num">${String(i+1).padStart(2,'0')}</div>${p}</div>`
-    ).join('');
-    const card = document.createElement('div');
-    card.className = `project-card ${key}`;
-    card.innerHTML = `
-      <div class="card-strip"></div>
-      <div class="card-header">
-        <div class="card-icon">${PROJ_ICON[key]}</div>
-        <div class="card-meta"><h3>${PROJ_NAME[key]}</h3><span class="card-tag">${PROJ_TAG[key]}</span></div>
-      </div>
-      <div class="card-desc-section">
-        <p class="card-desc">${meta.desc}</p>
-        <div class="pillars">${pillarHTML}</div>
-      </div>
-      <div class="task-divider">
-        <div class="task-divider-line"></div>
-        <div class="task-divider-label">This week's tasks</div>
-        <div class="task-divider-line"></div>
-      </div>
-      <div class="task-section">
-        <div class="task-list" id="tlist-${key}"></div>
-        <a class="card-task-hint" href="#task-builder-section" onclick="scrollToBuilderAndSelect('${key}')">
-          <span>✏️ Edit tasks in Task Builder</span>
-          <span class="hint-arrow">→</span>
-        </a>
-      </div>
-      <div class="progress-row">
-        <div class="progress-meta">
-          <span class="progress-label">Week completion</span>
-          <span class="progress-pct" id="cpct-${key}">${pct}%</span>
-        </div>
-        <div class="progress-track"><div class="progress-fill" id="cbar-${key}" style="width:${pct}%"></div></div>
-        <div class="progress-fraction" id="cfrac-${key}">${done} of ${total} tasks done</div>
-      </div>`;
+  ['geo','cn','fs'].forEach(function(key){
+    var meta = PROJ_DESC[key];
+    var pp = calcPct(key);
+    var pillarHTML = meta.pillars.map(function(p,i){
+      return '<div class="pillar"><div class="pillar-num">'+String(i+1).padStart(2,'0')+'</div>'+p+'</div>';
+    }).join('');
+    var card = document.createElement('div');
+    card.className = 'project-card ' + key;
+    card.innerHTML =
+      '<div class="card-strip"></div>'+
+      '<div class="card-header">'+
+        '<div class="card-icon">'+PROJ_ICON[key]+'</div>'+
+        '<div class="card-meta"><h3>'+PROJ_NAME[key]+'</h3><span class="card-tag">'+PROJ_TAG[key]+'</span></div>'+
+      '</div>'+
+      '<div class="card-desc-section">'+
+        '<p class="card-desc">'+meta.desc+'</p>'+
+        '<div class="pillars">'+pillarHTML+'</div>'+
+      '</div>'+
+      '<div class="task-divider"><div class="task-divider-line"></div><div class="task-divider-label">This week\'s tasks</div><div class="task-divider-line"></div></div>'+
+      '<div class="task-section">'+
+        '<div class="task-list" id="tlist-'+key+'"></div>'+
+        '<a class="card-task-hint" href="#task-builder-section" onclick="scrollToBuilderAndSelect(\''+key+'\')">'+
+          '<span>✏️ Edit tasks in Task Builder</span><span class="hint-arrow">→</span>'+
+        '</a>'+
+      '</div>'+
+      '<div class="progress-row">'+
+        '<div class="progress-meta"><span class="progress-label">Week completion</span><span class="progress-pct" id="cpct-'+key+'">'+pp.pct+'%</span></div>'+
+        '<div class="progress-track"><div class="progress-fill" id="cbar-'+key+'" style="width:'+pp.pct+'%"></div></div>'+
+        '<div class="progress-fraction" id="cfrac-'+key+'">'+pp.done+' of '+pp.total+' tasks done</div>'+
+      '</div>';
     grid.appendChild(card);
     renderCardTaskList(key);
   });
 }
 
 function scrollToBuilderAndSelect(key){
-  toolActive = key;
-  buildToolTabs();
-  renderToolPanel();
-  setTimeout(() => {
-    const sec = document.getElementById('task-builder-section');
-    if(sec) sec.scrollIntoView({ behavior:'smooth', block:'start' });
-  }, 50);
+  toolActive = key; buildToolTabs(); renderToolPanel();
+  setTimeout(function(){ var s=document.getElementById('task-builder-section'); if(s) s.scrollIntoView({behavior:'smooth',block:'start'}); },50);
 }
 
-// Renders card task list — tick state from `ticks` (Firebase)
 function renderCardTaskList(key){
-  const el = document.getElementById(`tlist-${key}`); if(!el) return;
+  var el = document.getElementById('tlist-'+key); if(!el) return;
   el.innerHTML = '';
-  (taskState[key] || []).forEach(t => el.appendChild(makeCardTaskEl(key, t)));
+  (taskState[key]||[]).forEach(function(t){ el.appendChild(makeCardTaskEl(key,t)); });
 }
 
 function makeCardTaskEl(key, task){
-  const isDone = !!(ticks[key]?.[task.id]);
-  const row = document.createElement('div');
+  var isDone = !!(ticks[key] && ticks[key][task.id]);
+  var row = document.createElement('div');
   row.className = 'task-item';
-  row.dataset.id = task.id;
-  row.onclick = () => cardToggle(key, task.id);
-
-  const chk = document.createElement('div');
-  chk.className = `task-check${isDone ? ' done' : ''}`;
+  row.onclick = function(){ cardToggle(key, task.id); };
+  var chk = document.createElement('div');
+  chk.className = 'task-check' + (isDone ? ' done' : '');
   chk.textContent = isDone ? '✓' : '';
-
-  const txt = document.createElement('span');
-  txt.className = `task-text${isDone ? ' done' : ''}`;
+  var txt = document.createElement('span');
+  txt.className = 'task-text' + (isDone ? ' done' : '');
   txt.textContent = task.title;
-
-  row.appendChild(chk);
-  row.appendChild(txt);
+  row.appendChild(chk); row.appendChild(txt);
   return row;
 }
 
-// Toggle tick → save to Firestore → onSnapshot will re-render
 async function cardToggle(key, id){
   if(!window._fb) return;
-  const newVal = !(ticks[key]?.[id]);
-  // Optimistic UI update
+  var newVal = !(ticks[key] && ticks[key][id]);
   if(!ticks[key]) ticks[key] = {};
   ticks[key][id] = newVal;
-  renderCardTaskList(key);
-  refreshCardProgress(key);
-  // Persist
+  renderCardTaskList(key); refreshCardProgress(key);
   await window._fb.saveTick(key, id, newVal);
 }
 
 function refreshCardProgress(key){
-  const { done, total, pct } = calcPct(key);
-  const b = document.getElementById(`cbar-${key}`); if(b) b.style.width = pct+'%';
-  const p = document.getElementById(`cpct-${key}`); if(p) p.textContent = pct+'%';
-  const f = document.getElementById(`cfrac-${key}`); if(f) f.textContent = `${done} of ${total} tasks done`;
+  var pp = calcPct(key);
+  var b = document.getElementById('cbar-'+key); if(b) b.style.width = pp.pct+'%';
+  var p = document.getElementById('cpct-'+key); if(p) p.textContent = pp.pct+'%';
+  var f = document.getElementById('cfrac-'+key); if(f) f.textContent = pp.done+' of '+pp.total+' tasks done';
 }
 
 // ═══════════════════════════════════════════════════════════
-//  TASK BUILDER — CRUD only, NO tick
+//  TASK BUILDER
 // ═══════════════════════════════════════════════════════════
 function buildToolTabs(){
-  const el = document.getElementById('tool-tabs'); if(!el) return;
+  var el = document.getElementById('tool-tabs'); if(!el) return;
   el.innerHTML = '';
-  ['geo','cn','fs'].forEach(key => {
-    const b = document.createElement('button');
-    b.className = 'tool-tab' + (toolActive === key ? ` active-${key}` : '');
+  ['geo','cn','fs'].forEach(function(key){
+    var b = document.createElement('button');
+    b.className = 'tool-tab' + (toolActive===key ? ' active-'+key : '');
     b.textContent = PROJ_NAME[key];
-    b.onclick = () => { toolActive = key; buildToolTabs(); renderToolPanel(); };
+    b.onclick = function(){ toolActive=key; buildToolTabs(); renderToolPanel(); };
     el.appendChild(b);
   });
 }
 
 function renderToolPanel(){
-  const list = document.getElementById('tool-task-list'); if(!list) return;
+  var list = document.getElementById('tool-task-list'); if(!list) return;
   list.innerHTML = '';
-  (taskState[toolActive] || []).forEach(t => list.appendChild(makeToolTaskEl(toolActive, t)));
+  (taskState[toolActive]||[]).forEach(function(t){ list.appendChild(makeToolTaskEl(toolActive,t)); });
   refreshToolProgress();
 }
 
 function makeToolTaskEl(key, task){
-  const row = document.createElement('div');
-  row.className = 'tool-task-row';
-
-  // drag handle / order indicator
-  const num = document.createElement('span');
-  num.style.cssText = 'font-family:"Baloo 2",cursive;font-size:.7rem;color:#ccc;width:20px;text-align:center;flex-shrink:0';
+  var row = document.createElement('div'); row.className = 'tool-task-row';
+  var num = document.createElement('span');
+  num.style.cssText = 'font-size:.7rem;color:#ccc;width:20px;text-align:center;flex-shrink:0';
   num.textContent = '⠿';
-
-  const txt = document.createElement('input');
-  txt.type = 'text';
-  txt.className = 'tool-task-inp';
-  txt.value = task.title;
-  txt.addEventListener('blur', () => {
-    const v = txt.value.trim();
-    if(!v){ toolDel(key, task.id); return; }
-    const t = (taskState[key] || []).find(x => x.id === task.id);
-    if(t){ t.title = v; renderCardTaskList(key); }
+  var txt = document.createElement('input'); txt.type='text'; txt.className='tool-task-inp'; txt.value=task.title;
+  txt.addEventListener('blur', function(){
+    var v=txt.value.trim();
+    if(!v){ toolDel(key,task.id); return; }
+    var t=(taskState[key]||[]).find(function(x){return x.id===task.id;});
+    if(t){ t.title=v; renderCardTaskList(key); }
   });
-  txt.addEventListener('keydown', e => {
-    if(e.key === 'Enter') txt.blur();
-    if(e.key === 'Escape'){ txt.value = task.title; txt.blur(); }
-  });
-
-  const del = document.createElement('button');
-  del.className = 'tool-del';
-  del.textContent = '×';
-  del.onclick = () => toolDel(key, task.id);
-
-  row.appendChild(num);
-  row.appendChild(txt);
-  row.appendChild(del);
+  txt.addEventListener('keydown', function(e){ if(e.key==='Enter') txt.blur(); if(e.key==='Escape'){txt.value=task.title;txt.blur();} });
+  var del = document.createElement('button'); del.className='tool-del'; del.textContent='×';
+  del.onclick = function(){ toolDel(key,task.id); };
+  row.appendChild(num); row.appendChild(txt); row.appendChild(del);
   return row;
 }
 
 function toolDel(key, id){
-  taskState[key] = (taskState[key] || []).filter(x => x.id !== id);
-  renderToolPanel();
-  renderCardTaskList(key);
-  refreshCardProgress(key);
+  taskState[key]=(taskState[key]||[]).filter(function(x){return x.id!==id;});
+  renderToolPanel(); renderCardTaskList(key); refreshCardProgress(key);
 }
 
 function refreshToolProgress(){
-  const { done, total, pct } = calcPct(toolActive);
-  const fill   = document.getElementById('tool-prog-fill');
-  const pctEl  = document.getElementById('tool-prog-pct');
-  const frac   = document.getElementById('tool-frac');
-  if(fill)  { fill.className = `tool-prog-fill ${toolActive}`; fill.style.width = pct+'%'; }
-  if(pctEl) { pctEl.className = `tool-prog-pct ${toolActive}`; pctEl.textContent = pct+'%'; }
-  if(frac)  frac.textContent = `${done} of ${total} tasks done`;
+  var pp = calcPct(toolActive);
+  var fill=document.getElementById('tool-prog-fill');
+  var pctEl=document.getElementById('tool-prog-pct');
+  var frac=document.getElementById('tool-frac');
+  if(fill){ fill.className='tool-prog-fill '+toolActive; fill.style.width=pp.pct+'%'; }
+  if(pctEl){ pctEl.className='tool-prog-pct '+toolActive; pctEl.textContent=pp.pct+'%'; }
+  if(frac) frac.textContent=pp.done+' of '+pp.total+' tasks done';
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const inp = document.getElementById('tool-add-inp');
-  if(inp) inp.addEventListener('keydown', e => {
-    if(e.key !== 'Enter') return;
-    const v = inp.value.trim(); if(!v) return;
-    (taskState[toolActive] = taskState[toolActive] || []).push({ id: uid(toolActive), title: v });
-    renderToolPanel();
-    renderCardTaskList(toolActive);
-    refreshCardProgress(toolActive);
-    inp.value = ''; inp.focus();
-  });
-});
-
-// JSON export — tasks without done field
 function buildExportJSON(){
-  const weekVal = (document.getElementById('tool-week-inp')?.value.trim()) || (DATA?.week) || '';
-  const projects = {};
-  ['geo','cn','fs'].forEach(k => {
-    projects[k] = { tasks: (taskState[k] || []).map(t => ({ id: t.id, title: t.title })) };
+  var projects={};
+  ['geo','cn','fs'].forEach(function(k){
+    projects[k]={tasks:(taskState[k]||[]).map(function(t){return {id:t.id,title:t.title};})};
   });
-  return JSON.stringify({ week: weekVal, projects }, null, 2);
+  return JSON.stringify({week:getCurrentWeekLabel(),projects:projects},null,2);
 }
 
-function showToolJSON(json){
-  toolLastJSON = json;
-  document.getElementById('tool-json-placeholder').style.display = 'none';
-  const wrap = document.getElementById('tool-json-wrap');
-  wrap.classList.add('show');
-  document.getElementById('tool-json-out').textContent = json;
-}
-
+function showToolJSON(json){ toolLastJSON=json; document.getElementById('tool-json-placeholder').style.display='none'; var w=document.getElementById('tool-json-wrap'); w.classList.add('show'); document.getElementById('tool-json-out').textContent=json; }
 function toolExportAll(){ showToolJSON(buildExportJSON()); }
-
 function toolCopyJSON(){
-  const text = toolLastJSON || buildExportJSON();
-  navigator.clipboard.writeText(text).then(() => {
-    const b = document.getElementById('tool-copy-btn');
-    b.textContent = 'Copied ✓'; b.className = 'tool-btn copied';
-    setTimeout(() => { b.textContent = 'Copy JSON'; b.className = 'tool-btn copy-btn'; }, 2000);
+  var text=toolLastJSON||buildExportJSON();
+  navigator.clipboard.writeText(text).then(function(){
+    var b=document.getElementById('tool-copy-btn'); b.textContent='Copied ✓'; b.className='tool-btn copied';
+    setTimeout(function(){ b.textContent='Copy JSON'; b.className='tool-btn copy-btn'; },2000);
   });
 }
-
 function toolReset(){
-  if(!confirm(`Clear all tasks for ${PROJ_NAME[toolActive]}?`)) return;
-  taskState[toolActive] = [];
-  renderToolPanel();
-  renderCardTaskList(toolActive);
-  refreshCardProgress(toolActive);
+  if(!confirm('Clear all tasks for '+PROJ_NAME[toolActive]+'?')) return;
+  taskState[toolActive]=[]; renderToolPanel(); renderCardTaskList(toolActive); refreshCardProgress(toolActive);
 }
+
+// ═══════════════════════════════════════════════════════════
+//  EMOJI PICKER
+// ═══════════════════════════════════════════════════════════
+function buildEmojiCats(){
+  var el=document.getElementById('emoji-cats'); if(!el) return;
+  el.innerHTML='';
+  Object.keys(EMOJI_CATS).forEach(function(cat){
+    var b=document.createElement('button'); b.type='button';
+    b.className='emoji-cat-btn'+(cat===activeCat?' active':'');
+    b.textContent=cat;
+    b.onclick=function(){ activeCat=cat; buildEmojiCats(); renderEmojiGrid(); };
+    el.appendChild(b);
+  });
+}
+function renderEmojiGrid(){
+  var grid=document.getElementById('emoji-grid'); if(!grid) return;
+  var current=document.getElementById('f-emoji').value;
+  grid.innerHTML='';
+  (EMOJI_CATS[activeCat]||[]).forEach(function(em){
+    var btn=document.createElement('button'); btn.type='button';
+    btn.className='emoji-opt'+(em===current?' selected':'');
+    btn.textContent=em; btn.title=em;
+    btn.onclick=function(){ setEmoji(em); closeEmojiDropdown(); };
+    grid.appendChild(btn);
+  });
+}
+function setEmoji(em){
+  document.getElementById('f-emoji').value=em;
+  var prev=document.getElementById('emoji-preview'); if(prev) prev.textContent=em;
+  var lbl=document.getElementById('emoji-trigger-label');
+  if(lbl){ lbl.textContent=em+' \u2014 click to change'; lbl.className='emoji-trigger-label picked'; }
+  document.querySelectorAll('.emoji-opt').forEach(function(b){ b.classList.toggle('selected',b.textContent===em); });
+}
+function toggleEmojiDropdown(){
+  var trigger=document.getElementById('emoji-trigger');
+  var dropdown=document.getElementById('emoji-dropdown');
+  if(dropdown.classList.contains('open')){ closeEmojiDropdown(); }
+  else{ trigger.classList.add('open'); dropdown.classList.add('open'); buildEmojiCats(); renderEmojiGrid(); }
+}
+function closeEmojiDropdown(){
+  var t=document.getElementById('emoji-trigger'); if(t) t.classList.remove('open');
+  var d=document.getElementById('emoji-dropdown'); if(d) d.classList.remove('open');
+}
+document.addEventListener('click',function(e){
+  var field=document.getElementById('emoji-field');
+  if(field&&!field.contains(e.target)) closeEmojiDropdown();
+});
 
 // ═══════════════════════════════════════════════════════════
 //  STATS
 // ═══════════════════════════════════════════════════════════
-function countUp(id, n, dur=700){
-  const el = document.getElementById(id); if(!el) return;
-  let v = 0; const s = n/(dur/16);
-  const t = setInterval(() => { v = Math.min(v+s, n); el.textContent = Math.round(v); if(v >= n) clearInterval(t); }, 16);
+function countUp(id,n,dur){
+  dur=dur||700; var el=document.getElementById(id); if(!el) return;
+  var v=0; var s=n/(dur/16);
+  var t=setInterval(function(){ v=Math.min(v+s,n); el.textContent=Math.round(v); if(v>=n) clearInterval(t); },16);
 }
 function calcStreak(logs){
   if(!logs.length) return 0;
-  const days = [...new Set(logs.map(l => l.date))].sort().reverse();
-  let s = 1;
-  for(let i = 1; i < days.length; i++){
-    const a = new Date(days[i-1]), b = new Date(days[i]);
-    if((a-b)/864e5 <= 1) s++; else break;
+  var days=[...new Set(logs.map(function(l){return l.date;}))].sort().reverse();
+  var s=1;
+  for(var i=1;i<days.length;i++){
+    var a=new Date(days[i-1]),b=new Date(days[i]);
+    if((a-b)/864e5<=1) s++; else break;
   }
   return s;
 }
 function buildStats(logs){
-  countUp('stat-total', logs.length);
-  countUp('stat-geo',   logs.filter(l => l.project === 'geo').length);
-  countUp('stat-cn',    logs.filter(l => l.project === 'cn').length);
-  countUp('stat-fs',    logs.filter(l => l.project === 'fs').length);
-  countUp('stat-streak', calcStreak(logs));
+  countUp('stat-total',logs.length);
+  countUp('stat-geo',logs.filter(function(l){return l.project==='geo';}).length);
+  countUp('stat-cn',logs.filter(function(l){return l.project==='cn';}).length);
+  countUp('stat-fs',logs.filter(function(l){return l.project==='fs';}).length);
+  countUp('stat-streak',calcStreak(logs));
 }
 
 // ═══════════════════════════════════════════════════════════
 //  HEATMAP
 // ═══════════════════════════════════════════════════════════
 function buildHeatmap(){
-  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const rows = [
-    { cls:'geo', cells:['geo-2','geo-3','geo-1','geo-2','empty','geo-1','empty'] },
-    { cls:'cn',  cells:['cn-2','cn-3','cn-3','cn-1','empty','cn-1','cn-1'] },
-    { cls:'fs',  cells:['fs-2','fs-3','fs-2','fs-3','empty','fs-1','fs-2'] },
+  var days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  var rows=[
+    {cls:'geo',cells:['geo-2','geo-3','geo-1','geo-2','empty','geo-1','empty']},
+    {cls:'cn', cells:['cn-2','cn-3','cn-3','cn-1','empty','cn-1','cn-1']},
+    {cls:'fs', cells:['fs-2','fs-3','fs-2','fs-3','empty','fs-1','fs-2']},
   ];
-  const g = document.getElementById('heatmap'); if(!g) return;
-  g.innerHTML = '<div></div>' + days.map(d => `<div class="heatmap-dh">${d}</div>`).join('');
-  rows.forEach(row => {
-    g.innerHTML += `<div class="heatmap-rl ${row.cls}">${row.cls.toUpperCase()}</div>`;
-    row.cells.forEach((cls, i) => {
-      g.innerHTML += `<div class="hcell ${cls}${i===2?' today':''}" title="${PROJ_NAME[row.cls]} · ${days[i]}"></div>`;
+  var g=document.getElementById('heatmap'); if(!g) return;
+  g.innerHTML='<div></div>'+days.map(function(d){return '<div class="heatmap-dh">'+d+'</div>';}).join('');
+  rows.forEach(function(row){
+    g.innerHTML+='<div class="heatmap-rl '+row.cls+'">'+row.cls.toUpperCase()+'</div>';
+    row.cells.forEach(function(cls,i){
+      g.innerHTML+='<div class="hcell '+cls+(i===2?' today':'')+'" title="'+PROJ_NAME[row.cls]+' \u00b7 '+days[i]+'"></div>';
     });
   });
 }
@@ -1055,63 +952,99 @@ function buildHeatmap(){
 //  FILTERS + LOG GRID
 // ═══════════════════════════════════════════════════════════
 function buildFilters(){
-  const row = document.getElementById('filters-row'); if(!row) return;
-  row.innerHTML = '';
-  DAYS_ORDER.forEach(d => {
-    const b = document.createElement('button');
-    b.className = 'day-btn' + (d === activeDay ? ' active' : '');
-    b.textContent = d === 'All' ? 'All days' : d;
-    b.onclick = () => { activeDay = d; buildFilters(); buildLogGrid(); };
+  var row=document.getElementById('filters-row'); if(!row) return;
+  row.innerHTML='';
+  DAYS_ORDER.forEach(function(d){
+    var b=document.createElement('button'); b.className='day-btn'+(d===activeDay?' active':'');
+    b.textContent=d==='All'?'All days':d;
+    b.onclick=function(){ activeDay=d; buildFilters(); buildLogGrid(); };
     row.appendChild(b);
   });
-  const sep = document.createElement('div'); sep.className = 'filter-sep'; row.appendChild(sep);
-  PROJS_ORD.forEach(p => {
-    const b = document.createElement('button');
-    b.className = 'proj-btn' + (p === activeProj ? ` active-${p}` : '');
-    b.textContent = PROJ_LBL[p];
-    b.onclick = () => { activeProj = p; buildFilters(); buildLogGrid(); };
+  var sep=document.createElement('div'); sep.className='filter-sep'; row.appendChild(sep);
+  PROJS_ORD.forEach(function(p){
+    var b=document.createElement('button'); b.className='proj-btn'+(p===activeProj?' active-'+p:'');
+    b.textContent=PROJ_LBL[p];
+    b.onclick=function(){ activeProj=p; buildFilters(); buildLogGrid(); };
     row.appendChild(b);
   });
 }
-
 function showSkeleton(){
-  const el = document.getElementById('log-grid');
-  el.className = 'sk-grid';
-  el.innerHTML = Array.from({length:6}, () =>
-    `<div class="sk-card"><div class="sk-banner"></div><div class="sk-body"><div class="sk-line"></div><div class="sk-line short"></div></div></div>`
-  ).join('');
+  var el=document.getElementById('log-grid'); el.className='sk-grid';
+  el.innerHTML=Array.from({length:6},function(){
+    return '<div class="sk-card"><div class="sk-banner"></div><div class="sk-body"><div class="sk-line"></div><div class="sk-line short"></div></div></div>';
+  }).join('');
+}
+function buildLogGrid(){
+  var el=document.getElementById('log-grid'); if(!el) return;
+  el.className='log-grid';
+  var data=DATA&&DATA.logs?DATA.logs:[];
+  if(activeDay!=='All') data=data.filter(function(l){return l.day===activeDay;});
+  if(activeProj!=='all') data=data.filter(function(l){return l.project===activeProj;});
+  if(!data.length){ el.innerHTML='<div class="empty-state"><div class="ei">🌸</div><p>No entries for this filter.</p></div>'; return; }
+  el.innerHTML='';
+  data.forEach(function(log,i){
+    var c=document.createElement('div'); c.className='log-card'; c.style.animationDelay=(i*.055)+'s';
+    var tags=(log.tags||[]).map(function(t){return '<span class="log-tag '+log.project+'">'+t+'</span>';}).join('');
+    c.innerHTML=
+      '<div class="log-banner '+log.project+'">'+
+        '<span class="log-emoji">'+(log.emoji||'📌')+'</span>'+
+        '<span class="log-src">'+(PROJ_NAME[log.project]||log.project)+'</span>'+
+      '</div>'+
+      '<div class="log-body">'+
+        '<div class="log-date">📅 '+log.date+'</div>'+
+        '<h4><span class="sdot '+log.status+'"></span>'+(log.title||'Untitled')+'</h4>'+
+        '<p>'+(log.desc||'')+'</p>'+
+        '<div class="log-tags">'+tags+'<span class="log-tag status-'+log.status+'">'+(STATUS_LBL[log.status]||log.status)+'</span></div>'+
+      '</div>';
+    el.appendChild(c);
+  });
 }
 
-function buildLogGrid(){
-  const el = document.getElementById('log-grid'); if(!el) return;
-  el.className = 'log-grid';
-  let data = DATA?.logs || [];
-  if(activeDay !== 'All') data = data.filter(l => l.day === activeDay);
-  if(activeProj !== 'all') data = data.filter(l => l.project === activeProj);
-  if(!data.length){
-    el.innerHTML = `<div class="empty-state"><div class="ei">🌸</div><p>No entries for this filter.</p></div>`;
-    return;
-  }
-  el.innerHTML = '';
-  data.forEach((log, i) => {
-    const c = document.createElement('div');
-    c.className = 'log-card';
-    c.style.animationDelay = `${i*.055}s`;
-    c.innerHTML = `
-      <div class="log-banner ${log.project}">
-        <span class="log-emoji">${log.emoji||'📌'}</span>
-        <span class="log-src">${PROJ_NAME[log.project]||log.project}</span>
-      </div>
-      <div class="log-body">
-        <div class="log-date">📅 ${log.date}</div>
-        <h4><span class="sdot ${log.status}"></span>${log.title||'Untitled'}</h4>
-        <p>${log.desc||''}</p>
-        <div class="log-tags">
-          ${(log.tags||[]).map(t => `<span class="log-tag ${log.project}">${t}</span>`).join('')}
-          <span class="log-tag status-${log.status}">${STATUS_LBL[log.status]||log.status}</span>
-        </div>
-      </div>`;
-    el.appendChild(c);
+// ═══════════════════════════════════════════════════════════
+//  MODAL
+// ═══════════════════════════════════════════════════════════
+function openModal(e){
+  e&&e.preventDefault();
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow='hidden';
+  document.getElementById('mstrip').className='mstrip default';
+  setToday();
+  setEmoji('📌');
+  buildEmojiCats();
+  renderEmojiGrid();
+  document.getElementById('jp-wrap').classList.remove('show');
+}
+function closeModal(){ document.getElementById('modal-overlay').classList.remove('open'); document.body.style.overflow=''; }
+function handleOverlayClick(e){ if(e.target===document.getElementById('modal-overlay')) closeModal(); }
+function selProj(p){ mSelProj=p; document.getElementById('mstrip').className='mstrip '+p; document.querySelectorAll('.psel-btn').forEach(function(b){b.className='psel-btn'+(b.dataset.proj===p?' sel-'+p:'');}); }
+function selStatus(s){ mSelStatus=s; document.querySelectorAll('.ssel-btn').forEach(function(b){b.className='ssel-btn'+(b.dataset.status===s?' sel-'+s:'');}); }
+function setToday(){
+  var iso=new Date().toISOString().split('T')[0];
+  document.getElementById('f-date').value=iso;
+  updateDateDisplay(iso);
+}
+function updateDateDisplay(iso){
+  var el=document.getElementById('date-display'); if(!el) return;
+  if(!iso){el.textContent='';return;}
+  var d=new Date(iso+'T12:00:00');
+  var names=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  el.textContent='📅 '+names[d.getDay()]+', '+d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+}
+function fmtDate(iso){ if(!iso) return ''; var d=new Date(iso+'T12:00:00'); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
+function dayLabel(iso){ if(!iso) return ''; return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(iso+'T12:00:00').getDay()]; }
+function generateJSON(){
+  if(!mSelProj){alert('Please select a project.');return;}
+  var title=document.getElementById('f-title').value.trim(); if(!title){alert('Please add a title.');return;}
+  var entry={id:nextLogId,project:mSelProj,date:fmtDate(document.getElementById('f-date').value),day:dayLabel(document.getElementById('f-date').value),emoji:document.getElementById('f-emoji').value||'📌',title:title,desc:document.getElementById('f-desc').value.trim(),tags:document.getElementById('f-tags').value.split(',').map(function(t){return t.trim();}).filter(Boolean),status:mSelStatus};
+  document.getElementById('jp').textContent=JSON.stringify(entry,null,2);
+  document.getElementById('jp-wrap').classList.add('show');
+  document.getElementById('copy-btn-m').textContent='Copy to clipboard';
+  document.getElementById('copy-btn-m').classList.remove('copied');
+}
+function copyLogJSON(){
+  navigator.clipboard.writeText(document.getElementById('jp').textContent).then(function(){
+    var b=document.getElementById('copy-btn-m'); b.textContent='✓ Copied!'; b.classList.add('copied');
+    setTimeout(function(){b.textContent='Copy to clipboard';b.classList.remove('copied');},2000);
   });
 }
 
@@ -1120,202 +1053,67 @@ function buildLogGrid(){
 // ═══════════════════════════════════════════════════════════
 async function init(){
   showSkeleton();
+  // Hero week auto
+  var wEl=document.getElementById('hero-week');
+  if(wEl) wEl.textContent='📅 '+getCurrentWeekLabel();
 
-  // 1. Fetch JSON
-  try {
-    const r = await fetch(LOG_JSON);
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    DATA = await r.json();
-  } catch(e){
-    console.warn('studiorum-log.json not found:', e.message);
-    DATA = null;
-  }
+  try{
+    var r=await fetch(LOG_JSON);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    DATA=await r.json();
+  }catch(e){ console.warn('studiorum-log.json not found:',e.message); DATA=null; }
 
-  if(!DATA){
-    showFetchError();
-    return;
-  }
+  if(!DATA){ showFetchError(); return; }
 
-  // 2. Seed taskState from JSON (no done field)
-  ['geo','cn','fs'].forEach(k => {
-    taskState[k] = (DATA.projects?.[k]?.tasks || []).map(t => ({ id: t.id, title: t.title }));
+  ['geo','cn','fs'].forEach(function(k){
+    taskState[k]=(DATA.projects&&DATA.projects[k]&&DATA.projects[k].tasks||[]).map(function(t){return {id:t.id,title:t.title};});
   });
 
-  // 3. Set up week label
-  // Auto-compute current week label (Mon–Sun)
-  const wEl = document.getElementById('hero-week');
-  if(wEl) wEl.textContent = '📅 ' + getCurrentWeekLabel();
-
-  // 4. Stats + static sections
-  nextLogId = Math.max(0, ...(DATA.logs||[]).map(l => l.id||0)) + 1;
-  buildStats(DATA.logs || []);
-  buildProjectCards();   // renders with ticks={} initially
+  nextLogId=Math.max.apply(null,[0].concat((DATA.logs||[]).map(function(l){return l.id||0;})))+1;
+  buildStats(DATA.logs||[]);
+  buildProjectCards();
   buildToolTabs();
   renderToolPanel();
   buildHeatmap();
   buildFilters();
   buildLogGrid();
+  selStatus('done');
 
-  // 5. Connect Firebase — load ticks then start realtime listener
-  waitForFirebase(async () => {
-    ticks = await window._fb.loadTicks();
-    ['geo','cn','fs'].forEach(k => { renderCardTaskList(k); refreshCardProgress(k); });
-    startFirebaseListener();   // keeps in sync across devices
+  waitForFirebase(async function(){
+    ticks=await window._fb.loadTicks();
+    ['geo','cn','fs'].forEach(function(k){renderCardTaskList(k);refreshCardProgress(k);});
+    startFirebaseListener();
   });
 }
 
 function showFetchError(){
-  ['stat-total','stat-geo','stat-cn','stat-fs','stat-streak'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.textContent = '—';
-  });
-  const grid = document.getElementById('projects-grid');
-  if(grid) grid.innerHTML = `
-    <div style="grid-column:1/-1;padding:48px 24px;text-align:center;border:2px dashed rgba(45,45,45,.14);border-radius:22px">
-      <div style="font-size:2rem;margin-bottom:10px">📂</div>
-      <p style="font-family:'Baloo 2',cursive;font-size:1rem;font-weight:800;margin-bottom:6px">No data file found</p>
-      <p style="font-size:.83rem;color:#999;font-weight:600;line-height:1.7">Place
-        <code style="background:var(--green-pale);padding:1px 7px;border-radius:5px;color:#3a7a52">studiorum-log.json</code>
-        inside a <code style="background:var(--wash-blue);padding:1px 7px;border-radius:5px;color:#3a65a0">data/</code>
-        folder next to this HTML file, then reload.</p>
-    </div>`;
+  ['stat-total','stat-geo','stat-cn','stat-fs','stat-streak'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent='—';});
+  var grid=document.getElementById('projects-grid');
+  if(grid) grid.innerHTML='<div style="grid-column:1/-1;padding:48px 24px;text-align:center;border:2px dashed rgba(45,45,45,.14);border-radius:22px"><div style="font-size:2rem;margin-bottom:10px">📂</div><p style="font-family:\'Baloo 2\',cursive;font-size:1rem;font-weight:800;margin-bottom:6px">No data file found</p><p style="font-size:.83rem;color:#999;font-weight:600;line-height:1.7">Place <code style="background:var(--green-pale);padding:1px 7px;border-radius:5px;color:#3a7a52">studiorum-log.json</code> inside a <code style="background:var(--wash-blue);padding:1px 7px;border-radius:5px;color:#3a65a0">data/</code> folder next to this HTML file, then reload.</p></div>';
   buildToolTabs(); renderToolPanel(); buildHeatmap();
-  const fr = document.getElementById('filters-row'); if(fr) fr.innerHTML = '';
-  const lg = document.getElementById('log-grid');
-  if(lg){ lg.className='log-grid'; lg.innerHTML=`<div class="empty-state"><div class="ei">📋</div><p>Load <strong>studiorum-log.json</strong> to see your progress log.</p></div>`; }
+  var fr=document.getElementById('filters-row'); if(fr) fr.innerHTML='';
+  var lg=document.getElementById('log-grid');
+  if(lg){lg.className='log-grid';lg.innerHTML='<div class="empty-state"><div class="ei">📋</div><p>Load <strong>studiorum-log.json</strong> to see your progress log.</p></div>';}
 }
 
-// ═══════════════════════════════════════════════════════════
-//  LOG MODAL
-// ═══════════════════════════════════════════════════════════
-function openModal(e){
-  e&&e.preventDefault();
-  document.getElementById('modal-overlay').classList.add('open');
-  document.body.style.overflow='hidden';
-  document.getElementById('mstrip').className='mstrip default';
-  initModal();
-}
-
-// ── EMOJI PICKER ────────────────────────────────────────────
-const EMOJI_CATS = {
-  'Science': ['🧪','🔬','🧬','⚗️','🔭','📡','🧫','🧲','⚡','💊','🩺','🧯'],
-  'Data':    ['📊','📈','📉','📋','📁','🗂️','🗃️','📂','🔍','🔎','📌','📍'],
-  'Writing': ['📝','✍️','📖','📚','📓','📔','📒','📃','🖊️','✒️','🖋️','📄'],
-  'Media':   ['🎧','🎤','📣','📸','📷','🎬','🎥','📺','📻','🎙️','🖼️','🎨'],
-  'Work':    ['💼','📦','🚀','🎯','🏆','🎖️','💡','🛠️','⚙️','🔧','🔨','📐'],
-  'Nature':  ['🌱','🌿','🌸','🌊','🔥','⭐','✨','🌙','☀️','🌈','🍃','🌺'],
-  'People':  ['👀','🤝','💬','💪','🧠','🙌','👋','🫡','🤔','💭','❤️','🫶'],
-  'Status':  ['✅','⏳','🔄','📅','❌','⏰','🕐','💤','🆕','🔔','🚩','🎉'],
-  'Chinese': ['🀄','🈶','🈚','🀃','🀂','🀁','🀀','🎲','🧧','🏮','🎋','🎍'],
-];
-
-let activeCat = 'Science';
-
-function initModal(){
-  setToday();
-  buildEmojiCats();
-  renderEmojiGrid();
-  setEmoji('📌');
-}
-
-function buildEmojiCats(){
-  const el = document.getElementById('emoji-cats'); if(!el) return;
-  el.innerHTML = '';
-  Object.keys(EMOJI_CATS).forEach(cat => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'emoji-cat-btn' + (cat === activeCat ? ' active' : '');
-    b.textContent = cat;
-    b.onclick = () => { activeCat = cat; buildEmojiCats(); renderEmojiGrid(); };
-    el.appendChild(b);
-  });
-}
-
-function renderEmojiGrid(){
-  const grid = document.getElementById('emoji-grid'); if(!grid) return;
-  const current = document.getElementById('f-emoji').value;
-  grid.innerHTML = '';
-  (EMOJI_CATS[activeCat] || []).forEach(em => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'emoji-opt' + (em === current ? ' selected' : '');
-    btn.textContent = em;
-    btn.title = em;
-    btn.onclick = () => { setEmoji(em); closeEmojiDropdown(); };
-    grid.appendChild(btn);
-  });
-}
-
-function setEmoji(em){
-  document.getElementById('f-emoji').value = em;
-  const prev = document.getElementById('emoji-preview');
-  const lbl  = document.getElementById('emoji-trigger-label');
-  if(prev) prev.textContent = em;
-  if(lbl){ lbl.textContent = em + ' — click to change'; lbl.className = 'emoji-trigger-label picked'; }
-  document.querySelectorAll('.emoji-opt').forEach(b => b.classList.toggle('selected', b.textContent === em));
-}
-
-function toggleEmojiDropdown(){
-  const trigger  = document.getElementById('emoji-trigger');
-  const dropdown = document.getElementById('emoji-dropdown');
-  const isOpen   = dropdown.classList.contains('open');
-  if(isOpen){ closeEmojiDropdown(); }
-  else { trigger.classList.add('open'); dropdown.classList.add('open'); renderEmojiGrid(); }
-}
-
-function closeEmojiDropdown(){
-  document.getElementById('emoji-trigger')?.classList.remove('open');
-  document.getElementById('emoji-dropdown')?.classList.remove('open');
-}
-
-// Close dropdown when clicking outside
-document.addEventListener('click', e => {
-  const field = document.getElementById('emoji-field');
-  if(field && !field.contains(e.target)) closeEmojiDropdown();
-});
-
-function setToday(){
-  const today = new Date();
-  const iso = today.toISOString().split('T')[0];
-  document.getElementById('f-date').value = iso;
-  updateDateDisplay(iso);
-}
-
-function updateDateDisplay(iso){
-  const el = document.getElementById('date-display');
-  if(!el) return;
-  if(!iso){ el.textContent=''; return; }
-  const d = new Date(iso+'T12:00:00');
-  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  el.textContent = '📅 ' + dayNames[d.getDay()] + ', ' + d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-}
-function closeModal(){ document.getElementById('modal-overlay').classList.remove('open'); document.body.style.overflow=''; }
-function handleOverlayClick(e){ if(e.target===document.getElementById('modal-overlay')) closeModal(); }
-function selProj(p){ mSelProj=p; document.getElementById('mstrip').className=`mstrip ${p}`; document.querySelectorAll('.psel-btn').forEach(b=>{ b.className='psel-btn'+(b.dataset.proj===p?` sel-${p}`:''); }); }
-function selStatus(s){ mSelStatus=s; document.querySelectorAll('.ssel-btn').forEach(b=>{ b.className='ssel-btn'+(b.dataset.status===s?` sel-${s}`:''); }); }
-function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso+'T12:00:00'); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
-function dayLabel(iso){ if(!iso) return ''; return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(iso+'T12:00:00').getDay()]; }
-function generateJSON(){
-  if(!mSelProj){ alert('Please select a project.'); return; }
-  const title=document.getElementById('f-title').value.trim(); if(!title){ alert('Please add a title.'); return; }
-  const entry={ id:nextLogId, project:mSelProj, date:fmtDate(document.getElementById('f-date').value), day:dayLabel(document.getElementById('f-date').value), emoji:document.getElementById('f-emoji').value.trim()||'📌', title, desc:document.getElementById('f-desc').value.trim(), tags:document.getElementById('f-tags').value.split(',').map(t=>t.trim()).filter(Boolean), status:mSelStatus };
-  document.getElementById('jp').textContent=JSON.stringify(entry,null,2);
-  document.getElementById('jp-wrap').classList.add('show');
-  document.getElementById('copy-btn-m').textContent='Copy to clipboard';
-  document.getElementById('copy-btn-m').classList.remove('copied');
-}
-function copyLogJSON(){ navigator.clipboard.writeText(document.getElementById('jp').textContent).then(()=>{ const b=document.getElementById('copy-btn-m'); b.textContent='✓ Copied!'; b.classList.add('copied'); setTimeout(()=>{ b.textContent='Copy to clipboard'; b.classList.remove('copied'); },2000); }); }
-
-document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
-document.addEventListener('change', e => {
-  if(e.target && e.target.id === 'f-date') updateDateDisplay(e.target.value);
-});
-document.addEventListener('DOMContentLoaded', () => {
-  const btn = document.querySelector('.menu-toggle'), nav = document.querySelector('nav');
-  if(btn && nav) btn.addEventListener('click', () => {
+document.addEventListener('keydown',function(e){if(e.key==='Escape') closeModal();});
+document.addEventListener('DOMContentLoaded',function(){
+  var btn=document.querySelector('.menu-toggle'), nav=document.querySelector('nav');
+  if(btn&&nav) btn.addEventListener('click',function(){
     nav.classList.toggle('show');
-    btn.innerHTML = nav.classList.contains('show') ? '&#10005;' : '&#9776;';
+    btn.innerHTML=nav.classList.contains('show')?'&#10005;':'&#9776;';
   });
-  selStatus('done');
+
+  var addInp=document.getElementById('tool-add-inp');
+  if(addInp) addInp.addEventListener('keydown',function(e){
+    if(e.key!=='Enter') return;
+    var v=addInp.value.trim(); if(!v) return;
+    if(!taskState[toolActive]) taskState[toolActive]=[];
+    taskState[toolActive].push({id:uid(toolActive),title:v});
+    renderToolPanel(); renderCardTaskList(toolActive); refreshCardProgress(toolActive);
+    addInp.value=''; addInp.focus();
+  });
+
   init();
 });
 </script>
